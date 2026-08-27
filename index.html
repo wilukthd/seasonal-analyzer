@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>商品売上分析 | Product Sales Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<div class="app-shell">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">帳</span>
+      <div class="brand-text">
+        <h1>Sales Ledger</h1>
+        <p>商品別 季節性・トレンド分析</p>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab-btn is-active" data-view="upload" role="tab">アップロード</button>
+      <button class="tab-btn" data-view="products" role="tab">商品一覧</button>
+      <button class="tab-btn" data-view="calendar" role="tab">季節カレンダー</button>
+    </nav>
+  </header>
+
+  <main class="views">
+
+    <!-- ===================== UPLOAD VIEW ===================== -->
+    <section id="view-upload" class="view is-active">
+      <div class="view-head">
+        <h2>ファイルを追加</h2>
+        <p class="hint">商品ごとの売上エクスポート（.xlsx）をドラッグ＆ドロップ、または選択してください。1シート目の見出し行に「月別推移 / 売上金額 / 購入個数 / 購入件数 / 総顧客数 / 新規顧客数 / 既存顧客数」が含まれる形式に対応しています。</p>
+      </div>
+
+      <label id="dropzone" class="dropzone" for="file-input">
+        <input type="file" id="file-input" accept=".xlsx" multiple hidden />
+        <div class="dropzone-inner">
+          <span class="dz-icon" aria-hidden="true">＋</span>
+          <p class="dz-title">ここにファイルをドロップ</p>
+          <p class="dz-sub">または クリックして選択（複数可）</p>
+        </div>
+      </label>
+
+      <div id="upload-log" class="upload-log" aria-live="polite"></div>
+    </section>
+
+    <!-- ===================== PRODUCTS VIEW ===================== -->
+    <section id="view-products" class="view">
+      <div class="view-head">
+        <h2>商品一覧</h2>
+        <p class="hint">保存済みの商品データ。クリックで詳細な季節性分析を表示します。</p>
+      </div>
+      <div id="products-empty" class="empty-state" hidden>
+        <p class="empty-title">まだデータがありません</p>
+        <p class="empty-sub">「アップロード」タブからファイルを追加してください。</p>
+      </div>
+      <div id="products-list" class="products-grid"></div>
+    </section>
+
+    <!-- ===================== PRODUCT DETAIL VIEW ===================== -->
+    <section id="view-detail" class="view">
+      <div class="view-head detail-head">
+        <button id="back-to-products" class="back-btn">← 商品一覧へ</button>
+        <div>
+          <h2 id="detail-title">—</h2>
+          <p class="hint" id="detail-sub"></p>
+        </div>
+        <button id="delete-product" class="danger-btn">この商品データを削除</button>
+      </div>
+
+      <div class="detail-grid">
+        <div class="card card-classification">
+          <h3>判定</h3>
+          <p id="detail-classification-badge" class="class-badge">—</p>
+          <p id="detail-classification-text" class="class-text"></p>
+          <dl class="stat-row">
+            <div><dt>η²（月要因の説明力）</dt><dd id="detail-eta2">—</dd></div>
+            <div><dt>F値（自由度）</dt><dd id="detail-fval">—</dd></div>
+            <div><dt>データ期間</dt><dd id="detail-span">—</dd></div>
+          </dl>
+        </div>
+
+        <div class="card card-seasonal">
+          <h3>月別季節指数（その年平均を100%とした場合）</h3>
+          <div id="seasonal-bars" class="seasonal-bars"></div>
+        </div>
+
+        <div class="card card-yoy">
+          <h3>年別平均売上・前年比</h3>
+          <div class="table-wrap">
+            <table id="yoy-table">
+              <thead><tr><th>年</th><th>月平均売上</th><th>対前年比</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card card-spikes">
+          <h3>スパイク上位 <span class="muted">（対年平均比が高い順）</span></h3>
+          <ol id="spike-list" class="spike-list"></ol>
+        </div>
+
+        <div class="card card-dips">
+          <h3>下位月 <span class="muted">（対年平均比が低い順）</span></h3>
+          <ol id="dip-list" class="spike-list"></ol>
+        </div>
+
+        <div class="card card-raw">
+          <h3>月別実績</h3>
+          <div class="table-wrap table-wrap-tall">
+            <table id="raw-table">
+              <thead><tr><th>年月</th><th>売上金額</th><th>購入個数</th><th>購入件数</th><th>総顧客数</th><th>新規顧客数</th><th>既存顧客数</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== CALENDAR VIEW ===================== -->
+    <section id="view-calendar" class="view">
+      <div class="view-head">
+        <h2>季節カレンダー</h2>
+        <p class="hint">全商品の月別季節指数を並べた一覧。η²が高い（季節性主導型）ほど濃く色付けしています。列見出しクリックで並び替え。</p>
+      </div>
+      <div id="calendar-empty" class="empty-state" hidden>
+        <p class="empty-title">比較できる商品がありません</p>
+        <p class="empty-sub">2つ以上の商品データをアップロードすると一覧表示されます。</p>
+      </div>
+      <div class="table-wrap calendar-wrap">
+        <table id="calendar-table">
+          <thead>
+            <tr>
+              <th data-sort="name" class="sortable">商品名</th>
+              <th data-sort="m1">1月</th><th data-sort="m2">2月</th><th data-sort="m3">3月</th>
+              <th data-sort="m4">4月</th><th data-sort="m5">5月</th><th data-sort="m6">6月</th>
+              <th data-sort="m7">7月</th><th data-sort="m8">8月</th><th data-sort="m9">9月</th>
+              <th data-sort="m10">10月</th><th data-sort="m11">11月</th><th data-sort="m12">12月</th>
+              <th data-sort="class">判定</th>
+              <th data-sort="eta2" class="sortable">季節の影響</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="app-footer">
+    <p>データはこのブラウザ内（IndexedDB）に保存されます。他の端末やブラウザとは同期されません。</p>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="js/db.js"></script>
+<script src="js/parse.js"></script>
+<script src="js/stats.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
