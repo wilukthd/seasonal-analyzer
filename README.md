@@ -11,14 +11,20 @@ by hand — automatically, for every product, in one comparison calendar.
   sheet's own name as the product name (falling back to the file name).
 - **Store** — parsed data is saved to your browser's IndexedDB. No server, no account.
   Data lives only in the browser/device you uploaded it in.
-- **Products** — a list of everything you've uploaded, with the classification badge
-  at a glance.
+- **Products** — a sortable, searchable table of everything you've uploaded (商品名 /
+  データ期間 / ヶ月数 / 判定 / 季節の影響 / 最終データ月), with a `更新推奨` tag on any
+  product whose latest data is 2+ months behind today. Click any row to open its detail.
 - **Product detail** — the same analysis your Python script produces per file: η² / F
   statistic, seasonal index bars, year-over-year table, top spikes (with a heuristic
   cause: 客単価上昇 / 既存顧客の再購買 / 新規顧客の増加), lowest months, and the full raw
   monthly table.
 - **季節カレンダー** — every stored product's monthly seasonal index side by side, colour-coded,
   sortable by any month or by η² — this is the automated version of your master Google Sheet.
+  Each row's single highest month is marked with a ★. Filterable by product name, classification
+  (季節性主導型/混合型/キャンペーン・イベント主導型), peak month (e.g. "show everything that
+  peaks in December"), and a minimum η² threshold — this is the "find a clue" layer: e.g. set
+  peak month = 12 to see every product that spikes around the holidays, or raise the η² minimum
+  to isolate your most reliably seasonal SKUs.
 
 ## Run it locally
 
@@ -31,6 +37,15 @@ python3 -m http.server 8000
 
 (Opening `index.html` directly via `file://` also works in most browsers, but IndexedDB
 and the CDN scripts are more reliable over `http://`.)
+
+## Monthly re-uploads
+
+Since sales data piles up month over month, re-uploading a product's file doesn't
+overwrite it — it merges by year-month. Whatever export you drop in (whether it's the
+full history again, like your current file, or eventually just the newest months), the
+upload log tells you exactly what changed: `新規 X ヶ月 / 更新 Y ヶ月`, or `変更なし` if
+nothing did. On the 商品一覧 list, any product whose latest month is 2+ months behind
+today gets a `更新推奨` tag as a lightweight reminder of what still needs a fresh file.
 
 ## Deploy to GitHub Pages
 

@@ -1,5 +1,5 @@
 // db.js — thin IndexedDB wrapper. One object store, keyed by product name.
-// Each record: { name, uploadedAt, sourceFileName, rows: [{ymKey, year, month, sales, qty, orderCount, totalCustomers, newCustomers, existingCustomers}] }
+// Each record: { name, firstUploadedAt, lastUpdatedAt, sourceFileName, rows: [{ymKey, year, month, sales, qty, orderCount, totalCustomers, newCustomers, existingCustomers}] }
 
 const SalesDB = (() => {
   const DB_NAME = 'sales-ledger';
@@ -53,6 +53,55 @@ const SalesDB = (() => {
     });
   }
 
+  function rowsEqual(a, b) {
+    return a.sales === b.sales && a.qty === b.qty && a.orderCount === b.orderCount
+      && a.totalCustomers === b.totalCustomers && a.newCustomers === b.newCustomers
+      && a.existingCustomers === b.existingCustomers;
+  }
+
+  // Upsert by year-month: re-uploading a product (whether the export is the
+  // full history again or just recent months) merges cleanly instead of
+  // wholesale replacing. Returns a summary of what changed.
+  async function mergeAndPut(incoming) {
+    const existing = await get(incoming.name);
+    const now = new Date().toISOString();
+
+    if (!existing) {
+      const record = {
+        name: incoming.name,
+        firstUploadedAt: now,
+        lastUpdatedAt: now,
+        sourceFileName: incoming.sourceFileName,
+        rows: incoming.rows,
+      };
+      await put(record);
+      return { record, isNew: true, added: incoming.rows.length, updated: 0, unchanged: 0 };
+    }
+
+    const byKey = {};
+    existing.rows.forEach((r) => { byKey[r.ymKey] = r; });
+
+    let added = 0, updated = 0, unchanged = 0;
+    incoming.rows.forEach((r) => {
+      const prev = byKey[r.ymKey];
+      if (!prev) added++;
+      else if (!rowsEqual(prev, r)) updated++;
+      else unchanged++;
+      byKey[r.ymKey] = r; // incoming always wins on conflict
+    });
+
+    const mergedRows = Object.values(byKey).sort((a, b) => (a.year - b.year) || (a.month - b.month));
+    const record = {
+      name: existing.name,
+      firstUploadedAt: existing.firstUploadedAt || now,
+      lastUpdatedAt: now,
+      sourceFileName: incoming.sourceFileName,
+      rows: mergedRows,
+    };
+    await put(record);
+    return { record, isNew: false, added, updated, unchanged };
+  }
+
   async function remove(name) {
     const db = await open();
     return new Promise((resolve, reject) => {
@@ -63,5 +112,5 @@ const SalesDB = (() => {
     });
   }
 
-  return { put, getAll, get, remove };
+  return { put, mergeAndPut, getAll, get, remove };
 })();

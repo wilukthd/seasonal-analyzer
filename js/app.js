@@ -9,6 +9,7 @@
   let currentProduct = null;
   let calendarSortKey = 'eta2';
   let calendarSortDir = -1;
+  const calendarFilters = { search: '', classes: new Set(), peakMonth: '', etaMin: 0 };
 
   // ---------------- view routing ----------------
   function showView(id) {
@@ -63,49 +64,127 @@
     for (const file of files) {
       try {
         const parsed = await SalesParser.parseWorkbook(file);
-        const record = {
+        const result = await SalesDB.mergeAndPut({
           name: parsed.name,
-          uploadedAt: new Date().toISOString(),
           sourceFileName: file.name,
           rows: parsed.rows,
-        };
-        await SalesDB.put(record);
-        logRow(parsed.name, true, `${parsed.rows.length}件の月次データを保存しました`);
+        });
+
+        let msg;
+        if (result.isNew) {
+          msg = `新規登録：${result.added}ヶ月分を保存しました`;
+        } else if (result.added === 0 && result.updated === 0) {
+          msg = `変更なし（すでに最新です・${result.unchanged}ヶ月分は一致）`;
+        } else {
+          const parts = [];
+          if (result.added > 0) parts.push(`新規 ${result.added}ヶ月`);
+          if (result.updated > 0) parts.push(`更新 ${result.updated}ヶ月`);
+          msg = `${parts.join(' / ')} を反映しました`;
+        }
+        logRow(parsed.name, true, msg);
       } catch (err) {
         logRow(file.name, false, err.message || String(err));
       }
     }
   }
 
+  // A product is "stale" if its latest month is more than ~2 calendar
+  // months behind today — a light nudge, not a hard rule (export timing varies).
+  function monthsBehind(lastYmKey) {
+    const [y, m] = lastYmKey.split('-').map(Number);
+    const today = new Date();
+    return (today.getFullYear() - y) * 12 + (today.getMonth() + 1 - m);
+  }
+
+  let productsSearch = '';
+  let productsSortKey = 'name';
+  let productsSortDir = 1;
+
   // ---------------- products list ----------------
   async function renderProductsList() {
     const products = await SalesDB.getAll();
-    const grid = document.getElementById('products-list');
+    const tbody = document.querySelector('#products-table tbody');
     const empty = document.getElementById('products-empty');
-    grid.innerHTML = '';
+    const noResults = document.getElementById('products-no-results');
+    const countEl = document.getElementById('products-count');
+    tbody.innerHTML = '';
 
     if (products.length === 0) {
       empty.hidden = false;
+      noResults.hidden = true;
+      countEl.textContent = '';
       return;
     }
     empty.hidden = true;
 
-    products.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
-
-    products.forEach((p) => {
+    const computed = products.map((p) => {
       const analysis = SalesStats.analyze(p.rows);
       const first = p.rows[0], last = p.rows[p.rows.length - 1];
-      const card = document.createElement('div');
-      card.className = 'product-card';
-      card.innerHTML = `
-        <h3>${escapeHtml(p.name)}</h3>
-        <p class="meta">${first.ymKey} 〜 ${last.ymKey}（${p.rows.length}ヶ月）</p>
-        <span class="badge ${analysis.classification.key}">${analysis.classification.label}</span>
+      return {
+        name: p.name,
+        firstYm: first.ymKey,
+        lastYm: last.ymKey,
+        months: p.rows.length,
+        classification: analysis.classification,
+        eta2: analysis.anova.eta2,
+        stale: monthsBehind(last.ymKey) >= 2,
+        staleBehind: monthsBehind(last.ymKey),
+      };
+    });
+
+    const filtered = productsSearch
+      ? computed.filter((p) => p.name.toLowerCase().includes(productsSearch.toLowerCase()))
+      : computed;
+
+    filtered.sort((a, b) => {
+      let av, bv;
+      switch (productsSortKey) {
+        case 'span': av = a.firstYm; bv = b.firstYm; break;
+        case 'months': av = a.months; bv = b.months; break;
+        case 'class': av = a.classification.label; bv = b.classification.label; break;
+        case 'eta2': av = a.eta2; bv = b.eta2; break;
+        case 'last': av = a.lastYm; bv = b.lastYm; break;
+        default: av = a.name; bv = b.name;
+      }
+      if (typeof av === 'string') return productsSortDir * av.localeCompare(bv, 'ja');
+      return productsSortDir * (av - bv);
+    });
+
+    countEl.textContent = `${filtered.length} / ${products.length} 商品を表示中`;
+    noResults.hidden = filtered.length > 0;
+
+    filtered.forEach((p) => {
+      const tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
+      const staleTag = p.stale
+        ? `<span class="class-tag stale-tag" title="最新データが${p.staleBehind}ヶ月前で止まっています">更新推奨</span>`
+        : '';
+      tr.innerHTML = `
+        <td class="name-cell">${escapeHtml(p.name)}</td>
+        <td>${p.firstYm} 〜 ${p.lastYm}</td>
+        <td class="pct-cell">${p.months}</td>
+        <td><span class="class-tag" style="background:var(--${p.classification.key}-bg); color:var(--${p.classification.key});">${p.classification.label}</span></td>
+        <td class="pct-cell">${fmtPct(p.eta2)}</td>
+        <td class="last-cell">${p.lastYm}${staleTag}</td>
       `;
-      card.addEventListener('click', () => openProductDetail(p.name));
-      grid.appendChild(card);
+      tr.addEventListener('click', () => openProductDetail(p.name));
+      tbody.appendChild(tr);
     });
   }
+
+  document.getElementById('prod-search').addEventListener('input', (e) => {
+    productsSearch = e.target.value.trim();
+    renderProductsList();
+  });
+
+  document.querySelectorAll('#products-table th.sortable').forEach((th) => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (productsSortKey === key) productsSortDir *= -1;
+      else { productsSortKey = key; productsSortDir = 1; }
+      renderProductsList();
+    });
+  });
 
   // ---------------- product detail ----------------
   async function openProductDetail(name) {
@@ -210,22 +289,48 @@
   async function renderCalendar() {
     const products = await SalesDB.getAll();
     const empty = document.getElementById('calendar-empty');
+    const noResults = document.getElementById('calendar-no-results');
+    const countEl = document.getElementById('calendar-count');
     const tbody = document.querySelector('#calendar-table tbody');
     tbody.innerHTML = '';
 
     if (products.length === 0) {
       empty.hidden = false;
+      noResults.hidden = true;
+      countEl.textContent = '';
       return;
     }
     empty.hidden = true;
 
     const computed = products.map((p) => {
       const analysis = SalesStats.analyze(p.rows);
-      return { name: p.name, seasonal: analysis.seasonal, classification: analysis.classification, eta2: analysis.anova.eta2 };
+      const withIdx = analysis.seasonal.filter((s) => s.index != null);
+      const peak = withIdx.length ? withIdx.reduce((a, b) => (b.index > a.index ? b : a)) : null;
+      return {
+        name: p.name,
+        seasonal: analysis.seasonal,
+        classification: analysis.classification,
+        eta2: analysis.anova.eta2,
+        peakMonth: peak ? peak.month : null,
+      };
     });
 
-    sortCalendarRows(computed);
-    computed.forEach((c) => tbody.appendChild(buildCalendarRow(c)));
+    const filtered = applyCalendarFilters(computed);
+    sortCalendarRows(filtered);
+
+    countEl.textContent = `${filtered.length} / ${products.length} 商品を表示中`;
+    noResults.hidden = filtered.length > 0;
+    filtered.forEach((c) => tbody.appendChild(buildCalendarRow(c)));
+  }
+
+  function applyCalendarFilters(rows) {
+    return rows.filter((r) => {
+      if (calendarFilters.search && !r.name.toLowerCase().includes(calendarFilters.search.toLowerCase())) return false;
+      if (calendarFilters.classes.size > 0 && !calendarFilters.classes.has(r.classification.key)) return false;
+      if (calendarFilters.peakMonth && r.peakMonth !== Number(calendarFilters.peakMonth)) return false;
+      if (r.eta2 < calendarFilters.etaMin) return false;
+      return true;
+    });
   }
 
   function sortCalendarRows(rows) {
@@ -253,9 +358,11 @@
   function buildCalendarRow(c) {
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
-    const monthCells = c.seasonal.map((s) =>
-      `<td class="pct-cell" ${pctColor(s.index)}>${s.index != null ? fmtPct(s.index, 0) : '—'}</td>`
-    ).join('');
+    const monthCells = c.seasonal.map((s) => {
+      const isPeak = s.index != null && s.month === c.peakMonth;
+      const peakMark = isPeak ? ' ★' : '';
+      return `<td class="pct-cell" ${pctColor(s.index)}>${s.index != null ? fmtPct(s.index, 0) + peakMark : '—'}</td>`;
+    }).join('');
     tr.innerHTML = `
       <td class="name-cell">${escapeHtml(c.name)}</td>
       ${monthCells}
@@ -273,6 +380,61 @@
       else { calendarSortKey = key; calendarSortDir = -1; }
       renderCalendar();
     });
+  });
+
+  // ---- calendar filters ----
+  const calSearch = document.getElementById('cal-search');
+  const calPeakMonth = document.getElementById('cal-peak-month');
+  const calEtaMin = document.getElementById('cal-eta-min');
+  const calEtaVal = document.getElementById('cal-eta-val');
+  const calReset = document.getElementById('cal-filter-reset');
+
+  let searchDebounce = null;
+  calSearch.addEventListener('input', () => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => {
+      calendarFilters.search = calSearch.value.trim();
+      renderCalendar();
+    }, 150);
+  });
+
+  document.querySelectorAll('#cal-class-filter .chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const key = chip.dataset.class;
+      if (calendarFilters.classes.has(key)) {
+        calendarFilters.classes.delete(key);
+        chip.classList.remove('is-active');
+      } else {
+        calendarFilters.classes.add(key);
+        chip.classList.add('is-active');
+      }
+      renderCalendar();
+    });
+  });
+
+  calPeakMonth.addEventListener('change', () => {
+    calendarFilters.peakMonth = calPeakMonth.value;
+    renderCalendar();
+  });
+
+  calEtaMin.addEventListener('input', () => {
+    const pct = Number(calEtaMin.value);
+    calendarFilters.etaMin = pct / 100;
+    calEtaVal.textContent = pct + '%';
+    renderCalendar();
+  });
+
+  calReset.addEventListener('click', () => {
+    calendarFilters.search = '';
+    calendarFilters.classes.clear();
+    calendarFilters.peakMonth = '';
+    calendarFilters.etaMin = 0;
+    calSearch.value = '';
+    calPeakMonth.value = '';
+    calEtaMin.value = 0;
+    calEtaVal.textContent = '0%';
+    document.querySelectorAll('#cal-class-filter .chip').forEach((c) => c.classList.remove('is-active'));
+    renderCalendar();
   });
 
   function escapeHtml(str) {
