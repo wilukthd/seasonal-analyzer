@@ -1,5 +1,7 @@
 // db.js — thin IndexedDB wrapper. One object store, keyed by product name.
-// Each record: { name, firstUploadedAt, lastUpdatedAt, sourceFileName, rows: [{ymKey, year, month, sales, qty, orderCount, totalCustomers, newCustomers, existingCustomers}] }
+// Each record: { name, firstUploadedAt, lastUpdatedAt, sourceFileName,
+//   rows: [{ymKey, year, month, sales, qty, orderCount, totalCustomers, newCustomers, existingCustomers}],
+//   notes: { [ymKey]: string } }  // free-text notes on specific months, e.g. spike explanations
 
 const SalesDB = (() => {
   const DB_NAME = 'sales-ledger';
@@ -73,6 +75,7 @@ const SalesDB = (() => {
         lastUpdatedAt: now,
         sourceFileName: incoming.sourceFileName,
         rows: incoming.rows,
+        notes: {},
       };
       await put(record);
       return { record, isNew: true, added: incoming.rows.length, updated: 0, unchanged: 0 };
@@ -97,9 +100,24 @@ const SalesDB = (() => {
       lastUpdatedAt: now,
       sourceFileName: incoming.sourceFileName,
       rows: mergedRows,
+      notes: existing.notes || {},
     };
     await put(record);
     return { record, isNew: false, added, updated, unchanged };
+  }
+
+  // Set (or clear, if note is empty) the note for a specific product+month.
+  // Returns the updated record, or null if the product doesn't exist.
+  async function setNote(name, ymKey, note) {
+    const existing = await get(name);
+    if (!existing) return null;
+    const notes = { ...(existing.notes || {}) };
+    const trimmed = (note || '').trim();
+    if (trimmed) notes[ymKey] = trimmed;
+    else delete notes[ymKey];
+    const record = { ...existing, notes };
+    await put(record);
+    return record;
   }
 
   async function remove(name) {
@@ -112,5 +130,5 @@ const SalesDB = (() => {
     });
   }
 
-  return { put, mergeAndPut, getAll, get, remove };
+  return { put, mergeAndPut, setNote, getAll, get, remove };
 })();

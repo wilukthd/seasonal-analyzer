@@ -33,7 +33,7 @@
     <section id="view-upload" class="view is-active">
       <div class="view-head">
         <h2>ファイルを追加</h2>
-        <p class="hint">商品ごとの売上エクスポート（.xlsx）をドラッグ＆ドロップ、または選択してください。1シート目の見出し行に「月別推移 / 売上金額 / 購入個数 / 購入件数 / 総顧客数 / 新規顧客数 / 既存顧客数」が含まれる形式に対応しています。</p>
+        <p class="hint">商品ごとの売上エクスポート（.xlsx）をドラッグ＆ドロップ、または選択してください。下記のテンプレート形式に対応しています。</p>
       </div>
 
       <label id="dropzone" class="dropzone" for="file-input">
@@ -46,6 +46,38 @@
       </label>
 
       <div id="upload-log" class="upload-log" aria-live="polite"></div>
+
+      <div class="card template-card">
+        <h3>対応フォーマット（列見出しは固定です）</h3>
+        <p class="template-desc">
+          以下7つの列見出しを含むシートを読み取ります。列の順番は自由ですが、
+          <strong>見出しの文字列は完全一致</strong>している必要があります。
+          シート名がそのまま商品名として登録されます。
+        </p>
+        <div class="table-wrap">
+          <table class="template-table">
+            <thead>
+              <tr>
+                <th>月別推移</th><th>売上金額</th><th>購入個数</th><th>購入件数</th>
+                <th>総顧客数</th><th>新規顧客数</th><th>既存顧客数</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>17_07</td><td>7,400</td><td>3</td><td>3</td><td>3</td><td>0</td><td>3</td>
+              </tr>
+              <tr>
+                <td>17_08</td><td>12,300</td><td>5</td><td>4</td><td>4</td><td>1</td><td>3</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <ul class="template-notes">
+          <li>年月列（月別推移）は「YY_MM」形式です（例：17_07 = 2017年7月）</li>
+          <li>見出し行はシートの先頭5行以内にある必要があります</li>
+          <li>シート名がそのまま商品名になります（シート名が既定の「Sheet1」のままの場合はファイル名を使用）</li>
+        </ul>
+      </div>
     </section>
 
     <!-- ===================== PRODUCTS VIEW ===================== -->
@@ -167,16 +199,24 @@
       </div>
       <div class="table-wrap calendar-wrap">
         <table id="calendar-table">
+          <colgroup>
+            <col class="col-name" />
+            <col class="col-month" /><col class="col-month" /><col class="col-month" /><col class="col-month" />
+            <col class="col-month" /><col class="col-month" /><col class="col-month" /><col class="col-month" />
+            <col class="col-month" /><col class="col-month" /><col class="col-month" /><col class="col-month" />
+            <col class="col-class" />
+            <col class="col-eta2" />
+          </colgroup>
           <thead>
             <tr>
               <th data-sort="name" class="sortable">
                 <span class="th-label">商品名</span>
                 <button type="button" class="th-filter-btn" data-filter-col="name" title="絞り込み">▾</button>
               </th>
-              <th data-sort="m1">1月</th><th data-sort="m2">2月</th><th data-sort="m3">3月</th>
-              <th data-sort="m4">4月</th><th data-sort="m5">5月</th><th data-sort="m6">6月</th>
-              <th data-sort="m7">7月</th><th data-sort="m8">8月</th><th data-sort="m9">9月</th>
-              <th data-sort="m10">10月</th><th data-sort="m11">11月</th><th data-sort="m12">12月</th>
+              <th data-sort="m1" class="sortable">1月</th><th data-sort="m2" class="sortable">2月</th><th data-sort="m3" class="sortable">3月</th>
+              <th data-sort="m4" class="sortable">4月</th><th data-sort="m5" class="sortable">5月</th><th data-sort="m6" class="sortable">6月</th>
+              <th data-sort="m7" class="sortable">7月</th><th data-sort="m8" class="sortable">8月</th><th data-sort="m9" class="sortable">9月</th>
+              <th data-sort="m10" class="sortable">10月</th><th data-sort="m11" class="sortable">11月</th><th data-sort="m12" class="sortable">12月</th>
               <th data-sort="class" class="sortable">
                 <span class="th-label">判定</span>
                 <button type="button" class="th-filter-btn" data-filter-col="class" title="絞り込み">▾</button>

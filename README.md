@@ -16,8 +16,9 @@ by hand — automatically, for every product, in one comparison calendar.
   product whose latest data is 2+ months behind today. Click any row to open its detail.
 - **Product detail** — the same analysis your Python script produces per file: η² / F
   statistic, seasonal index bars, year-over-year table, top spikes (with a heuristic
-  cause: 客単価上昇 / 既存顧客の再購買 / 新規顧客の増加), lowest months, and the full raw
-  monthly table.
+  cause: 客単価上昇 / 既存顧客の再購買 / 新規顧客の増加, plus a free-text note you can attach
+  to any spike — click メモを追加 to record the real reason once you know it, e.g. a
+  campaign name), lowest months, and the full raw monthly table.
 - **季節カレンダー** — every stored product's monthly seasonal index side by side, colour-coded,
   sortable by any month or by η² — this is the automated version of your master Google Sheet.
   Each row's single highest month is marked with a ★. 商品名 and 判定 columns have an
@@ -54,6 +55,10 @@ pushed to the repo. If you see the banner, or a table stays empty with no error 
 (older cached version without this safety net), replace the *entire* `sales-analyzer`
 folder in your repo in one go rather than individual files, and hard-refresh the page
 (Ctrl/Cmd+Shift+R) to bypass the browser cache.
+
+Notes on spikes are stored per product, keyed by year-month, and are preserved across
+re-uploads/merges — re-uploading a product's file never wipes out a note you've already
+written on one of its months.
 
 ## Deploy to GitHub Pages
 

@@ -232,8 +232,8 @@ function showFatalError(detail) {
 
     renderSeasonalBars(analysis.seasonal);
     renderYoyTable(analysis.yoy);
-    renderSpikeList('spike-list', analysis.spikes, true);
-    renderSpikeList('dip-list', analysis.dips, false);
+    renderSpikeList('spike-list', analysis.spikes, true, true);
+    renderSpikeList('dip-list', analysis.dips, false, false);
     renderRawTable(record.rows);
   }
 
@@ -266,21 +266,100 @@ function showFatalError(detail) {
     });
   }
 
-  function renderSpikeList(elId, items, withFactor) {
+  function renderSpikeList(elId, items, withFactor, withNotes) {
     const list = document.getElementById(elId);
     list.innerHTML = '';
     items.forEach((r) => {
       const li = document.createElement('li');
       li.className = 'spike-item';
-      li.innerHTML = `
+
+      const main = document.createElement('div');
+      main.className = 'spike-item-main';
+      main.innerHTML = `
         <div>
           <div class="ym">${r.ymKey}</div>
           ${withFactor ? `<div class="factor">${escapeHtml(r.factor || '')}</div>` : ''}
         </div>
         <div class="ratio ${r.ratio >= 1 ? 'up' : 'down'}">${fmtPct(r.ratio, 0)}</div>
       `;
+      li.appendChild(main);
+
+      if (withNotes) {
+        li.appendChild(buildNoteSection(r.ymKey));
+      }
+
       list.appendChild(li);
     });
+  }
+
+  function buildNoteSection(ymKey) {
+    const wrap = document.createElement('div');
+    wrap.className = 'spike-note';
+    const existingNote = (currentProduct.notes && currentProduct.notes[ymKey]) || '';
+    renderNoteView(wrap, ymKey, existingNote);
+    return wrap;
+  }
+
+  function renderNoteView(wrap, ymKey, note) {
+    wrap.innerHTML = '';
+    if (note) {
+      const p = document.createElement('p');
+      p.className = 'spike-note-text';
+      p.textContent = note;
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'spike-note-toggle';
+      editBtn.textContent = 'メモを編集';
+      editBtn.addEventListener('click', () => renderNoteEdit(wrap, ymKey, note));
+      wrap.appendChild(p);
+      wrap.appendChild(editBtn);
+    } else {
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'spike-note-toggle';
+      addBtn.textContent = '+ メモを追加';
+      addBtn.addEventListener('click', () => renderNoteEdit(wrap, ymKey, ''));
+      wrap.appendChild(addBtn);
+    }
+  }
+
+  function renderNoteEdit(wrap, ymKey, note) {
+    wrap.innerHTML = '';
+    const row = document.createElement('div');
+    row.className = 'spike-note-edit-row';
+
+    const textarea = document.createElement('textarea');
+    textarea.className = 'spike-note-textarea';
+    textarea.placeholder = 'このスパイクに心当たりがあれば記録してください（例：キャンペーン名、実施理由など）';
+    textarea.value = note;
+
+    const actions = document.createElement('div');
+    actions.className = 'spike-note-actions';
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'spike-note-save';
+    saveBtn.textContent = '保存';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'spike-note-cancel';
+    cancelBtn.textContent = 'キャンセル';
+
+    saveBtn.addEventListener('click', async () => {
+      saveBtn.disabled = true;
+      saveBtn.textContent = '保存中...';
+      const value = textarea.value.trim();
+      const updated = await SalesDB.setNote(currentProduct.name, ymKey, value);
+      if (updated) currentProduct.notes = updated.notes;
+      renderNoteView(wrap, ymKey, value);
+    });
+    cancelBtn.addEventListener('click', () => renderNoteView(wrap, ymKey, note));
+
+    actions.appendChild(saveBtn);
+    actions.appendChild(cancelBtn);
+    row.appendChild(textarea);
+    row.appendChild(actions);
+    wrap.appendChild(row);
+    textarea.focus();
   }
 
   function renderRawTable(rows) {
@@ -342,6 +421,24 @@ function showFatalError(detail) {
     countEl.textContent = `${filtered.length} / ${products.length} 商品を表示中`;
     noResults.hidden = filtered.length > 0;
     filtered.forEach((c) => tbody.appendChild(buildCalendarRow(c)));
+    updateCalendarSortIndicators();
+  }
+
+  const CAL_HEADER_LABELS = {
+    name: '商品名', class: '判定', eta2: '季節の影響',
+    m1: '1月', m2: '2月', m3: '3月', m4: '4月', m5: '5月', m6: '6月',
+    m7: '7月', m8: '8月', m9: '9月', m10: '10月', m11: '11月', m12: '12月',
+  };
+
+  function updateCalendarSortIndicators() {
+    document.querySelectorAll('#calendar-table th[data-sort]').forEach((th) => {
+      const key = th.dataset.sort;
+      const base = CAL_HEADER_LABELS[key] || '';
+      const arrow = calendarSortKey === key ? (calendarSortDir === 1 ? ' ▲' : ' ▼') : '';
+      const labelSpan = th.querySelector('.th-label');
+      if (labelSpan) labelSpan.textContent = base + arrow;
+      else th.textContent = base + arrow;
+    });
   }
 
   function applyCalendarFilters(rows) {

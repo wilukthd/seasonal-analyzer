@@ -173,6 +173,39 @@ html, body {
 
 .log-row.ok { border-left: 3px solid var(--seasonal); }
 .log-row.err { border-left: 3px solid var(--danger); }
+
+/* upload page: fixed-format template reference */
+.template-card { margin-top: 24px; }
+
+.template-card h3 {
+  font-family: var(--font-display);
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+
+.template-desc {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  line-height: 1.7;
+  margin: 0 0 14px;
+}
+
+.template-desc strong { color: var(--ink); }
+
+.template-table { font-size: 12px; }
+.template-table th {
+  background: var(--paper);
+  border-bottom: 2px solid var(--ink);
+}
+.template-table td { font-family: var(--font-mono); }
+
+.template-notes {
+  margin: 14px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  line-height: 1.9;
+}
 .log-row .name { font-weight: 700; flex-shrink: 0; }
 .log-row .msg { color: var(--ink-soft); }
 
@@ -364,20 +397,84 @@ tr:hover td { background: var(--paper); }
 .up { color: var(--seasonal); }
 .down { color: var(--danger); }
 
-.spike-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.spike-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 
 .spike-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 1px solid var(--line-soft);
+  padding-bottom: 10px;
+}
+
+.spike-item-main {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   gap: 10px;
-  border-bottom: 1px solid var(--line-soft);
-  padding-bottom: 8px;
 }
 
 .spike-item .ym { font-family: var(--font-mono); font-weight: 700; font-size: 12.5px; }
 .spike-item .factor { font-size: 11.5px; color: var(--ink-soft); }
 .spike-item .ratio { font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; }
+
+/* per-spike notes */
+.spike-note-toggle {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--ink-soft);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.spike-note-toggle:hover { color: var(--seasonal); }
+
+.spike-note-text {
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--paper);
+  border-left: 2px solid var(--seasonal);
+  padding: 6px 9px;
+  border-radius: 2px;
+  white-space: pre-wrap;
+  margin: 0 0 4px;
+}
+
+.spike-note-edit-row { display: flex; gap: 8px; align-items: stretch; }
+
+.spike-note-textarea {
+  flex: 1;
+  font-family: var(--font-body);
+  font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 7px 9px;
+  resize: vertical;
+  min-height: 52px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.spike-note-actions { display: flex; flex-direction: column; gap: 5px; }
+
+.spike-note-save, .spike-note-cancel {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 5px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.spike-note-save:hover { border-color: var(--seasonal); color: var(--seasonal); }
+.spike-note-save:disabled { opacity: 0.6; cursor: default; }
+.spike-note-cancel:hover { border-color: var(--danger); color: var(--danger); }
 
 /* filter bar (shared: products view + calendar view) */
 .filter-bar {
@@ -494,11 +591,40 @@ tr:hover td { background: var(--paper); }
 .table-wrap th.sortable { cursor: pointer; }
 .table-wrap th.sortable:hover { color: var(--seasonal); }
 
-.calendar-wrap table { font-size: 11.5px; }
+.calendar-wrap table {
+  font-size: 11px;
+  table-layout: fixed;
+}
+
+.calendar-wrap col.col-name { width: 15%; }
+.calendar-wrap col.col-month { width: 5%; }
+.calendar-wrap col.col-class { width: 17%; }
+.calendar-wrap col.col-eta2 { width: 8%; }
+
+.calendar-wrap th, .calendar-wrap td { padding: 8px 4px; }
+.calendar-wrap th:first-child, .calendar-wrap td:first-child { padding-left: 10px; }
+
 .calendar-wrap th.sortable { cursor: pointer; }
 .calendar-wrap th.sortable:hover { color: var(--seasonal); }
-.calendar-wrap td.name-cell { text-align: left; font-family: var(--font-body); font-weight: 700; }
-.calendar-wrap td.pct-cell { font-family: var(--font-mono); }
+.calendar-wrap td.name-cell {
+  text-align: left;
+  font-family: var(--font-body);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.calendar-wrap td.pct-cell {
+  font-family: var(--font-mono);
+  text-align: center;
+}
+.calendar-wrap th:not(:first-child) { text-align: center; }
+.calendar-wrap td:not(.name-cell) { text-align: center; }
+.calendar-wrap td .class-tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
 
 .app-footer {
   margin-top: 48px;
