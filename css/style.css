@@ -122,7 +122,6 @@ html, body {
   color: var(--ink-soft);
   font-size: 13.5px;
   line-height: 1.7;
-  max-width: 720px;
   margin: 0 0 24px;
 }
 
