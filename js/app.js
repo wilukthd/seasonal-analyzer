@@ -235,6 +235,7 @@ function showFatalError(detail) {
     renderSpikeList('spike-list', analysis.spikes, true, true);
     renderSpikeList('dip-list', analysis.dips, false, false);
     renderRawTable(record.rows);
+    initTrendSection(record.rows);
   }
 
   function renderSeasonalBars(seasonal) {
@@ -253,6 +254,115 @@ function showFatalError(detail) {
       `;
       wrap.appendChild(col);
     });
+  }
+
+  function fmtManYen(n) {
+    if (Math.abs(n) < 10000) return fmtYen(n);
+    const man = n / 10000;
+    return (man >= 100 ? Math.round(man) : man.toFixed(1)) + '万円';
+  }
+
+  let trendMode = 'all';
+  let trendYear = null;
+
+  function initTrendSection(rows) {
+    trendMode = 'all';
+    document.querySelectorAll('.trend-mode-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.mode === 'all'));
+
+    const years = Array.from(new Set(rows.map((r) => r.year))).sort((a, b) => a - b);
+    const yearSelect = document.getElementById('trend-year-select');
+    yearSelect.innerHTML = years.map((y) => `<option value="${y}">${y}年</option>`).join('');
+    trendYear = years[years.length - 1];
+    yearSelect.value = trendYear;
+    yearSelect.hidden = true;
+
+    renderTrendChart(rows);
+  }
+
+  document.querySelectorAll('.trend-mode-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      trendMode = btn.dataset.mode;
+      document.querySelectorAll('.trend-mode-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
+      document.getElementById('trend-year-select').hidden = trendMode !== 'year';
+      if (currentProduct) renderTrendChart(currentProduct.rows);
+    });
+  });
+
+  document.getElementById('trend-year-select').addEventListener('change', (e) => {
+    trendYear = Number(e.target.value);
+    if (currentProduct) renderTrendChart(currentProduct.rows);
+  });
+
+  function renderTrendChart(rows) {
+    const container = document.getElementById('trend-chart');
+    container.innerHTML = '';
+    if (trendMode === 'all') renderTrendAll(container, rows);
+    else renderTrendYear(container, rows, trendYear);
+  }
+
+  function renderTrendAll(container, rows) {
+    const W = 1000, H = 220, padTop = 18, padBottom = 26, padX = 6;
+    const usableW = W - padX * 2;
+    const usableH = H - padTop - padBottom;
+    const values = rows.map((r) => r.sales);
+    const maxV = Math.max(...values);
+    const minV = Math.min(...values);
+    const range = (maxV - minV) || 1;
+    const n = rows.length;
+
+    const points = rows.map((r, i) => ({
+      x: padX + (n <= 1 ? 0 : (i / (n - 1)) * usableW),
+      y: padTop + usableH - ((r.sales - minV) / range) * usableH,
+      r,
+    }));
+
+    const linePts = points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+    const areaPath = `M${points[0].x.toFixed(1)},${(padTop + usableH).toFixed(1)} L${linePts.split(' ').join(' L')} L${points[points.length - 1].x.toFixed(1)},${(padTop + usableH).toFixed(1)} Z`;
+
+    const xLabels = points
+      .filter((p, i) => p.r.month === 1 || i === 0)
+      .map((p) => `<text x="${p.x.toFixed(1)}" y="${H - 8}" font-size="11" fill="var(--ink-soft)" text-anchor="middle">${p.r.year}</text>`)
+      .join('');
+
+    const circles = n <= 36
+      ? points.map((p) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.5" fill="var(--seasonal)"></circle>`).join('')
+      : '';
+
+    container.innerHTML = `
+      <div class="trend-range-labels">
+        <span>最高: ${fmtYen(maxV)}</span>
+        <span>最低: ${fmtYen(minV)}</span>
+      </div>
+      <svg viewBox="0 0 ${W} ${H}" class="trend-svg" preserveAspectRatio="xMidYMid meet">
+        <path d="${areaPath}" fill="var(--seasonal-bg)"></path>
+        <polyline points="${linePts}" fill="none" stroke="var(--seasonal)" stroke-width="2.5"></polyline>
+        ${circles}
+        ${xLabels}
+      </svg>
+    `;
+  }
+
+  function renderTrendYear(container, rows, year) {
+    const byMonth = {};
+    rows.filter((r) => r.year === year).forEach((r) => { byMonth[r.month] = r.sales; });
+    const vals = Object.values(byMonth);
+    const maxV = Math.max(...vals, 1);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'seasonal-bars';
+    for (let m = 1; m <= 12; m++) {
+      const v = byMonth[m];
+      const heightPct = v != null ? Math.max(3, (v / maxV) * 100) : 2;
+      const col = document.createElement('div');
+      col.className = 'season-col';
+      col.innerHTML = `
+        <span class="season-val">${v != null ? fmtManYen(v) : '—'}</span>
+        <div class="season-bar-track"><div class="season-bar trend" style="height:${heightPct}%"></div></div>
+        <span class="season-label">${m}月</span>
+      `;
+      wrap.appendChild(col);
+    }
+    container.appendChild(wrap);
   }
 
   function renderYoyTable(yoy) {

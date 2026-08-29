@@ -273,6 +273,7 @@ html, body {
   grid-template-columns: repeat(2, 1fr);
   gap: 14px;
   margin-top: 24px;
+  align-items: start;
 }
 
 .card {
@@ -346,9 +347,75 @@ html, body {
 
 .season-bar.above { background: var(--seasonal); }
 .season-bar.below { background: var(--campaign); }
+.season-bar.trend { background: var(--campaign); }
 
 .season-label { font-size: 10px; color: var(--ink-soft); font-family: var(--font-mono); }
 .season-val { font-size: 10px; font-family: var(--font-mono); font-weight: 700; }
+
+/* trend chart section (inside card-seasonal, below the seasonal index bars) */
+.trend-section {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.trend-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.trend-header h3 { margin: 0; }
+
+.trend-controls { display: flex; align-items: center; gap: 8px; }
+
+.trend-mode-group {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.trend-mode-btn {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--surface);
+  border: none;
+  padding: 5px 13px;
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+
+.trend-mode-btn + .trend-mode-btn { border-left: 1px solid var(--line); }
+.trend-mode-btn:hover { background: var(--paper); }
+.trend-mode-btn.is-active { background: var(--seasonal); color: #fff; }
+
+.trend-year-select {
+  font-family: var(--font-body);
+  font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 5px 8px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.trend-chart { min-height: 220px; }
+
+.trend-range-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  color: var(--ink-soft);
+  margin-bottom: 4px;
+}
+
+.trend-svg { width: 100%; height: auto; display: block; }
 
 /* tables */
 .table-wrap { overflow-x: auto; }

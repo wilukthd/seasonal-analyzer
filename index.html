@@ -146,6 +146,20 @@
         <div class="card card-seasonal">
           <h3>月別季節指数（その年平均を100%とした場合）</h3>
           <div id="seasonal-bars" class="seasonal-bars"></div>
+
+          <div class="trend-section">
+            <div class="trend-header">
+              <h3>売上推移</h3>
+              <div class="trend-controls">
+                <div class="trend-mode-group">
+                  <button type="button" class="trend-mode-btn is-active" data-mode="all">全期間</button>
+                  <button type="button" class="trend-mode-btn" data-mode="year">年別</button>
+                </div>
+                <select id="trend-year-select" class="trend-year-select" hidden></select>
+              </div>
+            </div>
+            <div id="trend-chart" class="trend-chart"></div>
+          </div>
         </div>
 
         <div class="card card-yoy">
