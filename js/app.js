@@ -1,5 +1,24 @@
 // app.js — wires up views, upload handling, and rendering.
 
+// Safety net: if anything throws (e.g. a mismatched deploy where index.html
+// and app.js are out of sync), show it instead of silently doing nothing.
+window.addEventListener('error', (e) => {
+  showFatalError(e.error ? (e.error.stack || e.error.message) : e.message);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  showFatalError(e.reason ? (e.reason.stack || e.reason.message) : String(e.reason));
+});
+function showFatalError(detail) {
+  let banner = document.getElementById('fatal-error-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'fatal-error-banner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#9B3B32;color:#fff;padding:12px 20px;font-family:monospace;font-size:12.5px;white-space:pre-wrap;';
+    document.body.prepend(banner);
+  }
+  banner.textContent = 'アプリでエラーが発生しました。index.html / css / js のファイルが全て最新版か（新旧混在していないか）確認してください: ' + detail;
+}
+
 (() => {
   const fmtInt = (n) => Math.round(n).toLocaleString('ja-JP');
   const fmtYen = (n) => '¥' + Math.round(n).toLocaleString('ja-JP');
@@ -9,7 +28,9 @@
   let currentProduct = null;
   let calendarSortKey = 'eta2';
   let calendarSortDir = -1;
-  const calendarFilters = { search: '', classes: new Set(), peakMonth: '', etaMin: 0 };
+  // Excel-style column filters: null = no filter (show all); Set = only show these values.
+  const calendarColumnFilters = { name: null, class: null };
+  let openPopover = null;
 
   // ---------------- view routing ----------------
   function showView(id) {
@@ -325,10 +346,8 @@
 
   function applyCalendarFilters(rows) {
     return rows.filter((r) => {
-      if (calendarFilters.search && !r.name.toLowerCase().includes(calendarFilters.search.toLowerCase())) return false;
-      if (calendarFilters.classes.size > 0 && !calendarFilters.classes.has(r.classification.key)) return false;
-      if (calendarFilters.peakMonth && r.peakMonth !== Number(calendarFilters.peakMonth)) return false;
-      if (r.eta2 < calendarFilters.etaMin) return false;
+      if (calendarColumnFilters.name && !calendarColumnFilters.name.has(r.name)) return false;
+      if (calendarColumnFilters.class && !calendarColumnFilters.class.has(r.classification.key)) return false;
       return true;
     });
   }
@@ -348,11 +367,29 @@
     });
   }
 
+  function hexToRgb(hex) {
+    const v = hex.replace('#', '');
+    return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)];
+  }
+  function mixHex(hexA, hexB, t) {
+    const a = hexToRgb(hexA), b = hexToRgb(hexB);
+    const rgb = a.map((v, i) => Math.round(v + (b[i] - v) * t));
+    return `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+  }
+
+  // Continuous heatmap centered on 100% (that month = the year's average).
+  // Below 100% shades toward red, above shades toward green; saturation
+  // grows with distance from the midpoint so it reads clearly even on a
+  // light background, and text flips to white once the fill gets dark.
+  const HEAT_LOW = '#B4483C';   // strong red, below-average months
+  const HEAT_HIGH = '#1F7A5C';  // strong green, above-average months
   function pctColor(index) {
     if (index == null) return '';
-    if (index >= 1.15) return 'style="background:var(--seasonal-bg); color:var(--seasonal); font-weight:700;"';
-    if (index <= 0.85) return 'style="background:var(--campaign-bg); color:var(--campaign); font-weight:700;"';
-    return '';
+    const t = Math.max(-1, Math.min(1, (index - 1) / 0.5)); // ±50% = full saturation
+    if (Math.abs(t) < 0.04) return 'style="color:var(--ink);"'; // essentially 100%, leave neutral
+    const bg = t < 0 ? mixHex('#FFFFFF', HEAT_LOW, -t) : mixHex('#FFFFFF', HEAT_HIGH, t);
+    const textColor = Math.abs(t) > 0.55 ? '#FFFFFF' : 'var(--ink)';
+    return `style="background:${bg}; color:${textColor}; font-weight:700;"`;
   }
 
   function buildCalendarRow(c) {
@@ -382,59 +419,108 @@
     });
   });
 
-  // ---- calendar filters ----
-  const calSearch = document.getElementById('cal-search');
-  const calPeakMonth = document.getElementById('cal-peak-month');
-  const calEtaMin = document.getElementById('cal-eta-min');
-  const calEtaVal = document.getElementById('cal-eta-val');
-  const calReset = document.getElementById('cal-filter-reset');
+  // ---- calendar header filters (Excel-style dropdown) ----
+  function closePopover() {
+    if (openPopover) {
+      openPopover.remove();
+      openPopover = null;
+      document.removeEventListener('mousedown', onOutsideClick);
+    }
+  }
 
-  let searchDebounce = null;
-  calSearch.addEventListener('input', () => {
-    clearTimeout(searchDebounce);
-    searchDebounce = setTimeout(() => {
-      calendarFilters.search = calSearch.value.trim();
-      renderCalendar();
-    }, 150);
-  });
+  function onOutsideClick(e) {
+    if (openPopover && !openPopover.contains(e.target) && !e.target.closest('.th-filter-btn')) {
+      closePopover();
+    }
+  }
 
-  document.querySelectorAll('#cal-class-filter .chip').forEach((chip) => {
-    chip.addEventListener('click', () => {
-      const key = chip.dataset.class;
-      if (calendarFilters.classes.has(key)) {
-        calendarFilters.classes.delete(key);
-        chip.classList.remove('is-active');
-      } else {
-        calendarFilters.classes.add(key);
-        chip.classList.add('is-active');
-      }
+  async function openColumnFilter(colKey, buttonEl) {
+    if (openPopover) { closePopover(); return; }
+
+    const products = await SalesDB.getAll();
+    let valueList; // [{ value, label }]
+    if (colKey === 'name') {
+      valueList = products.map((p) => ({ value: p.name, label: p.name })).sort((a, b) => a.label.localeCompare(b.label, 'ja'));
+    } else {
+      const seen = new Map();
+      products.forEach((p) => {
+        const a = SalesStats.analyze(p.rows);
+        seen.set(a.classification.key, a.classification.label);
+      });
+      valueList = Array.from(seen, ([value, label]) => ({ value, label }));
+    }
+
+    const activeSet = calendarColumnFilters[colKey]; // null = all shown/checked
+    const pop = document.createElement('div');
+    pop.className = 'col-filter-popover';
+
+    const searchHtml = colKey === 'name' ? `<input type="text" class="col-filter-search" placeholder="検索..." />` : '';
+    pop.innerHTML = `
+      ${searchHtml}
+      <div class="col-filter-actions">
+        <button type="button" data-act="all">すべて選択</button>
+        <button type="button" data-act="none">すべて解除</button>
+      </div>
+      <div class="col-filter-list">
+        ${valueList.map((v) => `
+          <label>
+            <input type="checkbox" value="${escapeHtml(v.value)}" ${!activeSet || activeSet.has(v.value) ? 'checked' : ''} />
+            <span>${escapeHtml(v.label)}</span>
+          </label>
+        `).join('')}
+      </div>
+    `;
+
+    document.body.appendChild(pop);
+    const rect = buttonEl.getBoundingClientRect();
+    const popRect = pop.getBoundingClientRect();
+    let left = rect.left;
+    if (left + popRect.width > window.innerWidth - 10) left = window.innerWidth - popRect.width - 10;
+    pop.style.position = 'fixed';
+    pop.style.top = (rect.bottom + 4) + 'px';
+    pop.style.left = Math.max(10, left) + 'px';
+
+    openPopover = pop;
+    setTimeout(() => document.addEventListener('mousedown', onOutsideClick), 0);
+
+    function applyFromCheckboxes() {
+      const boxes = Array.from(pop.querySelectorAll('input[type="checkbox"]'));
+      const checked = boxes.filter((b) => b.checked).map((b) => b.value);
+      calendarColumnFilters[colKey] = checked.length === boxes.length ? null : new Set(checked);
+      buttonEl.classList.toggle('is-filtered', calendarColumnFilters[colKey] !== null);
       renderCalendar();
+    }
+
+    pop.querySelectorAll('input[type="checkbox"]').forEach((box) => {
+      box.addEventListener('change', applyFromCheckboxes);
     });
-  });
+    pop.querySelector('[data-act="all"]').addEventListener('click', () => {
+      pop.querySelectorAll('input[type="checkbox"]').forEach((b) => { b.checked = true; });
+      applyFromCheckboxes();
+    });
+    pop.querySelector('[data-act="none"]').addEventListener('click', () => {
+      pop.querySelectorAll('input[type="checkbox"]').forEach((b) => { b.checked = false; });
+      applyFromCheckboxes();
+    });
+    const searchBox = pop.querySelector('.col-filter-search');
+    if (searchBox) {
+      searchBox.addEventListener('input', () => {
+        const q = searchBox.value.toLowerCase();
+        pop.querySelectorAll('.col-filter-list label').forEach((label) => {
+          const text = label.textContent.toLowerCase();
+          label.style.display = text.includes(q) ? '' : 'none';
+        });
+      });
+      searchBox.focus();
+    }
+  }
 
-  calPeakMonth.addEventListener('change', () => {
-    calendarFilters.peakMonth = calPeakMonth.value;
-    renderCalendar();
-  });
-
-  calEtaMin.addEventListener('input', () => {
-    const pct = Number(calEtaMin.value);
-    calendarFilters.etaMin = pct / 100;
-    calEtaVal.textContent = pct + '%';
-    renderCalendar();
-  });
-
-  calReset.addEventListener('click', () => {
-    calendarFilters.search = '';
-    calendarFilters.classes.clear();
-    calendarFilters.peakMonth = '';
-    calendarFilters.etaMin = 0;
-    calSearch.value = '';
-    calPeakMonth.value = '';
-    calEtaMin.value = 0;
-    calEtaVal.textContent = '0%';
-    document.querySelectorAll('#cal-class-filter .chip').forEach((c) => c.classList.remove('is-active'));
-    renderCalendar();
+  document.querySelectorAll('.th-filter-btn').forEach((btn) => {
+    btn.classList.toggle('is-filtered', calendarColumnFilters[btn.dataset.filterCol] !== null);
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openColumnFilter(btn.dataset.filterCol, btn);
+    });
   });
 
   function escapeHtml(str) {

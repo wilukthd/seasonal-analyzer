@@ -152,41 +152,7 @@
     <section id="view-calendar" class="view">
       <div class="view-head">
         <h2>季節カレンダー</h2>
-        <p class="hint">全商品の月別季節指数を並べた一覧。η²が高い（季節性主導型）ほど濃く色付けしています。列見出しクリックで並び替え。</p>
-      </div>
-
-      <div class="filter-bar">
-        <div class="filter-group filter-search">
-          <label for="cal-search">商品名で検索</label>
-          <input type="text" id="cal-search" placeholder="商品名..." />
-        </div>
-
-        <div class="filter-group">
-          <span class="filter-label">判定で絞り込み</span>
-          <div class="chip-group" id="cal-class-filter">
-            <button type="button" class="chip chip-seasonal" data-class="seasonal">季節性主導型</button>
-            <button type="button" class="chip chip-mixed" data-class="mixed">混合型</button>
-            <button type="button" class="chip chip-campaign" data-class="campaign">キャンペーン/イベント主導型</button>
-          </div>
-        </div>
-
-        <div class="filter-group">
-          <label for="cal-peak-month">ピーク月で絞り込み</label>
-          <select id="cal-peak-month">
-            <option value="">指定なし</option>
-            <option value="1">1月</option><option value="2">2月</option><option value="3">3月</option>
-            <option value="4">4月</option><option value="5">5月</option><option value="6">6月</option>
-            <option value="7">7月</option><option value="8">8月</option><option value="9">9月</option>
-            <option value="10">10月</option><option value="11">11月</option><option value="12">12月</option>
-          </select>
-        </div>
-
-        <div class="filter-group">
-          <label for="cal-eta-min">季節の影響（η²）最小値: <span id="cal-eta-val">0%</span></label>
-          <input type="range" id="cal-eta-min" min="0" max="60" value="0" step="5" />
-        </div>
-
-        <button type="button" id="cal-filter-reset" class="reset-btn">条件をリセット</button>
+        <p class="hint">全商品の月別季節指数を並べた一覧。η²が高い（季節性主導型）ほど濃く色付けしています。列見出しクリックで並び替え、▾アイコンで絞り込み（Excelのフィルターと同じ要領です）。</p>
       </div>
 
       <p id="calendar-count" class="filter-count"></p>
@@ -197,18 +163,24 @@
       </div>
       <div id="calendar-no-results" class="empty-state" hidden>
         <p class="empty-title">条件に一致する商品がありません</p>
-        <p class="empty-sub">検索語や絞り込み条件を変えてみてください。</p>
+        <p class="empty-sub">フィルター条件を変えてみてください。</p>
       </div>
       <div class="table-wrap calendar-wrap">
         <table id="calendar-table">
           <thead>
             <tr>
-              <th data-sort="name" class="sortable">商品名</th>
+              <th data-sort="name" class="sortable">
+                <span class="th-label">商品名</span>
+                <button type="button" class="th-filter-btn" data-filter-col="name" title="絞り込み">▾</button>
+              </th>
               <th data-sort="m1">1月</th><th data-sort="m2">2月</th><th data-sort="m3">3月</th>
               <th data-sort="m4">4月</th><th data-sort="m5">5月</th><th data-sort="m6">6月</th>
               <th data-sort="m7">7月</th><th data-sort="m8">8月</th><th data-sort="m9">9月</th>
               <th data-sort="m10">10月</th><th data-sort="m11">11月</th><th data-sort="m12">12月</th>
-              <th data-sort="class">判定</th>
+              <th data-sort="class" class="sortable">
+                <span class="th-label">判定</span>
+                <button type="button" class="th-filter-btn" data-filter-col="class" title="絞り込み">▾</button>
+              </th>
               <th data-sort="eta2" class="sortable">季節の影響</th>
             </tr>
           </thead>

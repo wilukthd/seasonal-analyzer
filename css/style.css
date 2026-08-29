@@ -322,12 +322,26 @@ html, body {
 .table-wrap { overflow-x: auto; }
 .table-wrap-tall { max-height: 360px; overflow-y: auto; }
 
+/* calendar/products tables aren't nested inside a .card, so they need their
+   own solid frame — otherwise the graph-paper background bleeds through
+   every data row (only the sticky header had an explicit background). */
+.calendar-wrap, .products-wrap {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 4px 14px;
+}
+
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+
+th, td {
+  padding: 8px 10px;
+  vertical-align: middle;
+}
 
 th {
   text-align: right;
   font-weight: 700;
-  padding: 8px 10px;
   border-bottom: 2px solid var(--ink);
   position: sticky;
   top: 0;
@@ -339,10 +353,10 @@ th:first-child, td:first-child { text-align: left; }
 
 td {
   text-align: right;
-  padding: 7px 10px;
   border-bottom: 1px solid var(--line-soft);
   font-family: var(--font-mono);
   white-space: nowrap;
+  background: var(--surface);
 }
 
 tr:hover td { background: var(--paper); }
@@ -397,41 +411,83 @@ tr:hover td { background: var(--paper); }
   color: var(--ink);
 }
 
-.chip-group { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Excel-style header filter (calendar view) */
+.th-label { margin-right: 4px; }
 
-.chip {
-  font-family: var(--font-body);
-  font-size: 11.5px;
-  font-weight: 700;
-  border: 1px solid var(--line);
-  background: var(--paper);
+.th-filter-btn {
+  font-size: 10px;
+  line-height: 1;
+  background: transparent;
+  border: none;
   color: var(--ink-soft);
-  border-radius: 20px;
-  padding: 6px 12px;
   cursor: pointer;
+  padding: 2px 3px;
+  border-radius: 2px;
+  vertical-align: middle;
 }
 
-.chip:hover { border-color: var(--ink-soft); }
-.chip.is-active.chip-seasonal { background: var(--seasonal-bg); color: var(--seasonal); border-color: var(--seasonal); }
-.chip.is-active.chip-mixed { background: var(--mixed-bg); color: var(--mixed); border-color: var(--mixed); }
-.chip.is-active.chip-campaign { background: var(--campaign-bg); color: var(--campaign); border-color: var(--campaign); }
+.th-filter-btn:hover { background: var(--paper); color: var(--ink); }
+.th-filter-btn.is-filtered { color: var(--seasonal); font-weight: 700; }
 
-#cal-eta-min { width: 140px; accent-color: var(--seasonal); }
+.col-filter-popover {
+  background: var(--surface);
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 14px rgba(22, 35, 43, 0.18);
+  padding: 10px;
+  width: 220px;
+  font-size: 12.5px;
+  z-index: 200;
+}
 
-.reset-btn {
+.col-filter-search {
+  width: 100%;
   font-family: var(--font-body);
-  font-size: 12px;
-  font-weight: 700;
-  background: transparent;
+  font-size: 12.5px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 8px 14px;
-  cursor: pointer;
-  color: var(--ink-soft);
-  margin-left: auto;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  background: var(--paper);
+  color: var(--ink);
 }
 
-.reset-btn:hover { border-color: var(--danger); color: var(--danger); }
+.col-filter-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.col-filter-actions button {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  background: transparent;
+  border: none;
+  color: var(--seasonal);
+  cursor: pointer;
+  padding: 0;
+}
+
+.col-filter-list {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.col-filter-list label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  padding: 3px 2px;
+  border-radius: 2px;
+}
+
+.col-filter-list label:hover { background: var(--paper); }
+.col-filter-list input[type="checkbox"] { accent-color: var(--seasonal); }
 
 .filter-count { font-size: 12px; color: var(--ink-soft); margin: 0 0 12px; }
 

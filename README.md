@@ -20,11 +20,9 @@ by hand — automatically, for every product, in one comparison calendar.
   monthly table.
 - **季節カレンダー** — every stored product's monthly seasonal index side by side, colour-coded,
   sortable by any month or by η² — this is the automated version of your master Google Sheet.
-  Each row's single highest month is marked with a ★. Filterable by product name, classification
-  (季節性主導型/混合型/キャンペーン・イベント主導型), peak month (e.g. "show everything that
-  peaks in December"), and a minimum η² threshold — this is the "find a clue" layer: e.g. set
-  peak month = 12 to see every product that spikes around the holidays, or raise the η² minimum
-  to isolate your most reliably seasonal SKUs.
+  Each row's single highest month is marked with a ★. 商品名 and 判定 columns have an
+  Excel-style header filter (▾ icon → checklist of values, uncheck what you don't want) —
+  click sort headers to order, click ▾ to filter, same as a spreadsheet autofilter.
 
 ## Run it locally
 
@@ -46,6 +44,16 @@ full history again, like your current file, or eventually just the newest months
 upload log tells you exactly what changed: `新規 X ヶ月 / 更新 Y ヶ月`, or `変更なし` if
 nothing did. On the 商品一覧 list, any product whose latest month is 2+ months behind
 today gets a `更新推奨` tag as a lightweight reminder of what still needs a fresh file.
+
+## If something looks broken (blank table, buttons doing nothing)
+
+The app now shows a red banner at the top of the page if any JavaScript error occurs,
+instead of failing silently. The most common cause is a **partial deploy** — e.g. an old
+`index.html` sitting alongside a newer `app.js` (or vice versa) after only some files got
+pushed to the repo. If you see the banner, or a table stays empty with no error banner
+(older cached version without this safety net), replace the *entire* `sales-analyzer`
+folder in your repo in one go rather than individual files, and hard-refresh the page
+(Ctrl/Cmd+Shift+R) to bypass the browser cache.
 
 ## Deploy to GitHub Pages
 
