@@ -58,7 +58,8 @@ html, body {
 .brand-mark {
   font-family: var(--font-display);
   font-weight: 900;
-  font-size: 30px;
+  font-size: 16px;
+  letter-spacing: 0.03em;
   width: 52px;
   height: 52px;
   display: flex;
@@ -73,9 +74,9 @@ html, body {
 .brand-text h1 {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 20px;
+  font-size: 18px;
   margin: 0;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
 }
 
 .brand-text p {
@@ -83,6 +84,13 @@ html, body {
   font-size: 12.5px;
   color: var(--ink-soft);
   letter-spacing: 0.03em;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: flex-end;
+  gap: 20px;
+  flex-wrap: wrap;
 }
 
 .tabs { display: flex; gap: 4px; }
@@ -107,6 +115,30 @@ html, body {
   border-bottom: 2px solid var(--ink);
   font-weight: 700;
 }
+
+.lang-toggle {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  overflow: hidden;
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+
+.lang-btn {
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  font-weight: 700;
+  background: var(--surface);
+  border: none;
+  padding: 6px 12px;
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+
+.lang-btn + .lang-btn { border-left: 1px solid var(--line); }
+.lang-btn:hover { background: var(--paper); }
+.lang-btn.is-active { background: var(--ink); color: var(--paper); }
 
 /* ---------- views ---------- */
 .view { display: none; padding-top: 32px; }
@@ -213,6 +245,18 @@ html, body {
 .products-wrap table { font-size: 12.5px; }
 .products-wrap td.name-cell { font-weight: 700; }
 .products-wrap .last-cell { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+
+/* notes table — text-heavy, so unlike other tables it wraps and left-aligns */
+.notes-wrap table { font-size: 12.5px; table-layout: fixed; width: 100%; }
+.notes-wrap th, .notes-wrap td { white-space: normal; }
+.notes-wrap th:nth-child(1), .notes-wrap td:nth-child(1) { width: 18%; text-align: left; }
+.notes-wrap th:nth-child(2), .notes-wrap td:nth-child(2) { width: 10%; white-space: nowrap; }
+.notes-wrap th:nth-child(3), .notes-wrap td:nth-child(3) { width: 58%; text-align: left; }
+.notes-wrap th:nth-child(4), .notes-wrap td:nth-child(4) { width: 14%; white-space: nowrap; }
+.notes-wrap td.name-cell { font-weight: 700; font-family: var(--font-body); }
+.notes-wrap td.note-cell { font-family: var(--font-body); line-height: 1.6; }
+.notes-wrap th.sortable { cursor: pointer; }
+.notes-wrap th.sortable:hover { color: var(--seasonal); }
 
 .filter-count, .filter-count-inline {
   font-size: 12px;
@@ -424,7 +468,7 @@ html, body {
 /* calendar/products tables aren't nested inside a .card, so they need their
    own solid frame — otherwise the graph-paper background bleeds through
    every data row (only the sticky header had an explicit background). */
-.calendar-wrap, .products-wrap {
+.calendar-wrap, .products-wrap, .notes-wrap {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -706,4 +750,5 @@ tr:hover td { background: var(--paper); }
     grid-column: 1 / -1;
   }
   .topbar { flex-direction: column; align-items: flex-start; }
+  .topbar-right { width: 100%; justify-content: space-between; }
 }

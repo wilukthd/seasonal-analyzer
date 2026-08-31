@@ -16,14 +16,22 @@ function showFatalError(detail) {
     banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#9B3B32;color:#fff;padding:12px 20px;font-family:monospace;font-size:12.5px;white-space:pre-wrap;';
     document.body.prepend(banner);
   }
-  banner.textContent = 'アプリでエラーが発生しました。index.html / css / js のファイルが全て最新版か（新旧混在していないか）確認してください: ' + detail;
+  const msg = (typeof I18N !== 'undefined' && I18N.t)
+    ? I18N.t('error.banner', detail)
+    : 'An error occurred. Check that index.html / css / js are all the current version: ' + detail;
+  banner.textContent = msg;
 }
 
 (() => {
-  const fmtInt = (n) => Math.round(n).toLocaleString('ja-JP');
-  const fmtYen = (n) => '¥' + Math.round(n).toLocaleString('ja-JP');
+  const t = I18N.t;
+  const fmtInt = (n) => Math.round(n).toLocaleString(I18N.getLang() === 'en' ? 'en-US' : 'ja-JP');
+  const fmtYen = (n) => '¥' + Math.round(n).toLocaleString(I18N.getLang() === 'en' ? 'en-US' : 'ja-JP');
   const fmtPct = (n, digits = 1) => (n * 100).toFixed(digits) + '%';
   const fmtSignedPct = (n, digits = 1) => (n >= 0 ? '+' : '') + (n * 100).toFixed(digits) + '%';
+  const clsLabel = (key) => t('classification.' + key + '.label');
+  const clsText = (key) => t('classification.' + key + '.text');
+  const factorLabel = (key) => t('factor.' + key);
+  const monthLabel = (m) => t('month.' + m);
 
   let currentProduct = null;
   let calendarSortKey = 'eta2';
@@ -44,6 +52,7 @@ function showFatalError(detail) {
       showView(btn.dataset.view);
       if (btn.dataset.view === 'products') renderProductsList();
       if (btn.dataset.view === 'calendar') renderCalendar();
+      if (btn.dataset.view === 'notes') renderNotesView();
     });
   });
 
@@ -93,14 +102,14 @@ function showFatalError(detail) {
 
         let msg;
         if (result.isNew) {
-          msg = `新規登録：${result.added}ヶ月分を保存しました`;
+          msg = t('upload.newProduct', result.added);
         } else if (result.added === 0 && result.updated === 0) {
-          msg = `変更なし（すでに最新です・${result.unchanged}ヶ月分は一致）`;
+          msg = t('upload.noChange', result.unchanged);
         } else {
           const parts = [];
-          if (result.added > 0) parts.push(`新規 ${result.added}ヶ月`);
-          if (result.updated > 0) parts.push(`更新 ${result.updated}ヶ月`);
-          msg = `${parts.join(' / ')} を反映しました`;
+          if (result.added > 0) parts.push(t('upload.addedMonths', result.added));
+          if (result.updated > 0) parts.push(t('upload.updatedMonths', result.updated));
+          msg = t('upload.appliedSuffix', parts.join(' / '));
         }
         logRow(parsed.name, true, msg);
       } catch (err) {
@@ -162,7 +171,7 @@ function showFatalError(detail) {
       switch (productsSortKey) {
         case 'span': av = a.firstYm; bv = b.firstYm; break;
         case 'months': av = a.months; bv = b.months; break;
-        case 'class': av = a.classification.label; bv = b.classification.label; break;
+        case 'class': av = clsLabel(a.classification.key); bv = clsLabel(b.classification.key); break;
         case 'eta2': av = a.eta2; bv = b.eta2; break;
         case 'last': av = a.lastYm; bv = b.lastYm; break;
         default: av = a.name; bv = b.name;
@@ -171,20 +180,20 @@ function showFatalError(detail) {
       return productsSortDir * (av - bv);
     });
 
-    countEl.textContent = `${filtered.length} / ${products.length} 商品を表示中`;
+    countEl.textContent = t('products.count', filtered.length, products.length);
     noResults.hidden = filtered.length > 0;
 
     filtered.forEach((p) => {
       const tr = document.createElement('tr');
       tr.style.cursor = 'pointer';
       const staleTag = p.stale
-        ? `<span class="class-tag stale-tag" title="最新データが${p.staleBehind}ヶ月前で止まっています">更新推奨</span>`
+        ? `<span class="class-tag stale-tag" title="${escapeHtml(t('products.staleTitle', p.staleBehind))}">${escapeHtml(t('products.staleTag'))}</span>`
         : '';
       tr.innerHTML = `
         <td class="name-cell">${escapeHtml(p.name)}</td>
-        <td>${p.firstYm} 〜 ${p.lastYm}</td>
+        <td>${t('products.dateRange', p.firstYm, p.lastYm)}</td>
         <td class="pct-cell">${p.months}</td>
-        <td><span class="class-tag" style="background:var(--${p.classification.key}-bg); color:var(--${p.classification.key});">${p.classification.label}</span></td>
+        <td><span class="class-tag" style="background:var(--${p.classification.key}-bg); color:var(--${p.classification.key});">${escapeHtml(clsLabel(p.classification.key))}</span></td>
         <td class="pct-cell">${fmtPct(p.eta2)}</td>
         <td class="last-cell">${p.lastYm}${staleTag}</td>
       `;
@@ -212,23 +221,30 @@ function showFatalError(detail) {
     const record = await SalesDB.get(name);
     if (!record) return;
     currentProduct = record;
+    showView('detail');
+    renderProductDetailContent(record);
+  }
+
+  // Renders detail content for a record WITHOUT navigating — used both by
+  // openProductDetail() and by the language-change re-render, since the
+  // latter must not force-switch the view if the user is on another tab.
+  function renderProductDetailContent(record) {
     const analysis = SalesStats.analyze(record.rows);
 
-    showView('detail');
     document.getElementById('detail-title').textContent = record.name;
     const first = record.rows[0], last = record.rows[record.rows.length - 1];
     document.getElementById('detail-sub').textContent =
-      `${first.ymKey} 〜 ${last.ymKey} ・ 元ファイル: ${record.sourceFileName}`;
+      t('detail.sub', first.ymKey, last.ymKey, record.sourceFileName);
 
     const cls = analysis.classification;
     const badge = document.getElementById('detail-classification-badge');
-    badge.textContent = cls.label;
+    badge.textContent = clsLabel(cls.key);
     badge.style.color = `var(--${cls.key})`;
-    document.getElementById('detail-classification-text').textContent = cls.text;
+    document.getElementById('detail-classification-text').textContent = clsText(cls.key);
     document.getElementById('detail-eta2').textContent = fmtPct(analysis.anova.eta2);
     document.getElementById('detail-fval').textContent =
       analysis.anova.F != null ? `${analysis.anova.F.toFixed(2)} (${analysis.anova.dfBetween}, ${analysis.anova.dfWithin})` : '—';
-    document.getElementById('detail-span').textContent = `${record.rows.length}ヶ月分`;
+    document.getElementById('detail-span').textContent = t('detail.monthsUnit', record.rows.length);
 
     renderSeasonalBars(analysis.seasonal);
     renderYoyTable(analysis.yoy);
@@ -250,13 +266,14 @@ function showFatalError(detail) {
       col.innerHTML = `
         <span class="season-val">${s.index != null ? fmtPct(s.index, 0) : '—'}</span>
         <div class="season-bar-track"><div class="season-bar ${cls}" style="height:${heightPct}%"></div></div>
-        <span class="season-label">${s.label}</span>
+        <span class="season-label">${monthLabel(s.month)}</span>
       `;
       wrap.appendChild(col);
     });
   }
 
   function fmtManYen(n) {
+    if (I18N.getLang() === 'en') return fmtYen(n);
     if (Math.abs(n) < 10000) return fmtYen(n);
     const man = n / 10000;
     return (man >= 100 ? Math.round(man) : man.toFixed(1)) + '万円';
@@ -271,7 +288,7 @@ function showFatalError(detail) {
 
     const years = Array.from(new Set(rows.map((r) => r.year))).sort((a, b) => a - b);
     const yearSelect = document.getElementById('trend-year-select');
-    yearSelect.innerHTML = years.map((y) => `<option value="${y}">${y}年</option>`).join('');
+    yearSelect.innerHTML = years.map((y) => `<option value="${y}">${t('detail.yearOption', y)}</option>`).join('');
     trendYear = years[years.length - 1];
     yearSelect.value = trendYear;
     yearSelect.hidden = true;
@@ -330,8 +347,8 @@ function showFatalError(detail) {
 
     container.innerHTML = `
       <div class="trend-range-labels">
-        <span>最高: ${fmtYen(maxV)}</span>
-        <span>最低: ${fmtYen(minV)}</span>
+        <span>${t('detail.trendHigh')}: ${fmtYen(maxV)}</span>
+        <span>${t('detail.trendLow')}: ${fmtYen(minV)}</span>
       </div>
       <svg viewBox="0 0 ${W} ${H}" class="trend-svg" preserveAspectRatio="xMidYMid meet">
         <path d="${areaPath}" fill="var(--seasonal-bg)"></path>
@@ -358,7 +375,7 @@ function showFatalError(detail) {
       col.innerHTML = `
         <span class="season-val">${v != null ? fmtManYen(v) : '—'}</span>
         <div class="season-bar-track"><div class="season-bar trend" style="height:${heightPct}%"></div></div>
-        <span class="season-label">${m}月</span>
+        <span class="season-label">${monthLabel(m)}</span>
       `;
       wrap.appendChild(col);
     }
@@ -388,7 +405,7 @@ function showFatalError(detail) {
       main.innerHTML = `
         <div>
           <div class="ym">${r.ymKey}</div>
-          ${withFactor ? `<div class="factor">${escapeHtml(r.factor || '')}</div>` : ''}
+          ${withFactor ? `<div class="factor">${escapeHtml(factorLabel(r.factorKey))}</div>` : ''}
         </div>
         <div class="ratio ${r.ratio >= 1 ? 'up' : 'down'}">${fmtPct(r.ratio, 0)}</div>
       `;
@@ -419,7 +436,7 @@ function showFatalError(detail) {
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
       editBtn.className = 'spike-note-toggle';
-      editBtn.textContent = 'メモを編集';
+      editBtn.textContent = t('detail.editNote');
       editBtn.addEventListener('click', () => renderNoteEdit(wrap, ymKey, note));
       wrap.appendChild(p);
       wrap.appendChild(editBtn);
@@ -427,7 +444,7 @@ function showFatalError(detail) {
       const addBtn = document.createElement('button');
       addBtn.type = 'button';
       addBtn.className = 'spike-note-toggle';
-      addBtn.textContent = '+ メモを追加';
+      addBtn.textContent = t('detail.addNote');
       addBtn.addEventListener('click', () => renderNoteEdit(wrap, ymKey, ''));
       wrap.appendChild(addBtn);
     }
@@ -440,7 +457,7 @@ function showFatalError(detail) {
 
     const textarea = document.createElement('textarea');
     textarea.className = 'spike-note-textarea';
-    textarea.placeholder = 'このスパイクに心当たりがあれば記録してください（例：キャンペーン名、実施理由など）';
+    textarea.placeholder = t('detail.notePlaceholder');
     textarea.value = note;
 
     const actions = document.createElement('div');
@@ -448,15 +465,15 @@ function showFatalError(detail) {
     const saveBtn = document.createElement('button');
     saveBtn.type = 'button';
     saveBtn.className = 'spike-note-save';
-    saveBtn.textContent = '保存';
+    saveBtn.textContent = t('detail.save');
     const cancelBtn = document.createElement('button');
     cancelBtn.type = 'button';
     cancelBtn.className = 'spike-note-cancel';
-    cancelBtn.textContent = 'キャンセル';
+    cancelBtn.textContent = t('detail.cancel');
 
     saveBtn.addEventListener('click', async () => {
       saveBtn.disabled = true;
-      saveBtn.textContent = '保存中...';
+      saveBtn.textContent = t('detail.saving');
       const value = textarea.value.trim();
       const updated = await SalesDB.setNote(currentProduct.name, ymKey, value);
       if (updated) currentProduct.notes = updated.notes;
@@ -488,11 +505,96 @@ function showFatalError(detail) {
 
   document.getElementById('delete-product').addEventListener('click', async () => {
     if (!currentProduct) return;
-    if (!confirm(`「${currentProduct.name}」のデータを削除しますか？この操作は取り消せません。`)) return;
+    if (!confirm(t('detail.deleteConfirm', currentProduct.name))) return;
     await SalesDB.remove(currentProduct.name);
     currentProduct = null;
     showView('products');
     renderProductsList();
+  });
+
+  // ---------------- notes (cross-product) ----------------
+  let notesSearch = '';
+  let notesSortKey = 'ym';
+  let notesSortDir = -1;
+
+  async function renderNotesView() {
+    const products = await SalesDB.getAll();
+    const tbody = document.querySelector('#notes-table tbody');
+    const empty = document.getElementById('notes-empty');
+    const noResults = document.getElementById('notes-no-results');
+    const countEl = document.getElementById('notes-count');
+    tbody.innerHTML = '';
+
+    const allNotes = [];
+    products.forEach((p) => {
+      if (!p.notes || Object.keys(p.notes).length === 0) return;
+      const analysis = SalesStats.analyze(p.rows);
+      const byYm = {};
+      analysis.rowsWithRatio.forEach((r) => { byYm[r.ymKey] = r; });
+      Object.entries(p.notes).forEach(([ymKey, note]) => {
+        const row = byYm[ymKey];
+        allNotes.push({
+          productName: p.name,
+          ymKey,
+          note,
+          ratio: row ? row.ratio : null,
+        });
+      });
+    });
+
+    if (allNotes.length === 0) {
+      empty.hidden = false;
+      noResults.hidden = true;
+      countEl.textContent = '';
+      return;
+    }
+    empty.hidden = true;
+
+    const q = notesSearch.toLowerCase();
+    const filtered = notesSearch
+      ? allNotes.filter((n) => n.productName.toLowerCase().includes(q) || n.note.toLowerCase().includes(q))
+      : allNotes;
+
+    filtered.sort((a, b) => {
+      let av, bv;
+      switch (notesSortKey) {
+        case 'product': av = a.productName; bv = b.productName; break;
+        case 'ratio': av = a.ratio ?? -Infinity; bv = b.ratio ?? -Infinity; break;
+        default: av = a.ymKey; bv = b.ymKey;
+      }
+      if (typeof av === 'string') return notesSortDir * av.localeCompare(bv, 'ja');
+      return notesSortDir * (av - bv);
+    });
+
+    countEl.textContent = t('notes.count', filtered.length, allNotes.length);
+    noResults.hidden = filtered.length > 0;
+
+    filtered.forEach((n) => {
+      const tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
+      tr.innerHTML = `
+        <td class="name-cell">${escapeHtml(n.productName)}</td>
+        <td class="pct-cell">${n.ymKey}</td>
+        <td class="note-cell">${escapeHtml(n.note)}</td>
+        <td class="pct-cell">${n.ratio != null ? fmtPct(n.ratio, 0) : '—'}</td>
+      `;
+      tr.addEventListener('click', () => openProductDetail(n.productName));
+      tbody.appendChild(tr);
+    });
+  }
+
+  document.getElementById('notes-search').addEventListener('input', (e) => {
+    notesSearch = e.target.value.trim();
+    renderNotesView();
+  });
+
+  document.querySelectorAll('#notes-table th.sortable').forEach((th) => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (notesSortKey === key) notesSortDir *= -1;
+      else { notesSortKey = key; notesSortDir = key === 'ym' ? -1 : 1; }
+      renderNotesView();
+    });
   });
 
   // ---------------- calendar ----------------
@@ -508,6 +610,7 @@ function showFatalError(detail) {
       empty.hidden = false;
       noResults.hidden = true;
       countEl.textContent = '';
+      updateCalendarSortIndicators();
       return;
     }
     empty.hidden = true;
@@ -528,22 +631,24 @@ function showFatalError(detail) {
     const filtered = applyCalendarFilters(computed);
     sortCalendarRows(filtered);
 
-    countEl.textContent = `${filtered.length} / ${products.length} 商品を表示中`;
+    countEl.textContent = t('calendar.count', filtered.length, products.length);
     noResults.hidden = filtered.length > 0;
     filtered.forEach((c) => tbody.appendChild(buildCalendarRow(c)));
     updateCalendarSortIndicators();
   }
 
-  const CAL_HEADER_LABELS = {
-    name: '商品名', class: '判定', eta2: '季節の影響',
-    m1: '1月', m2: '2月', m3: '3月', m4: '4月', m5: '5月', m6: '6月',
-    m7: '7月', m8: '8月', m9: '9月', m10: '10月', m11: '11月', m12: '12月',
-  };
+  function calHeaderLabel(key) {
+    if (key === 'name') return t('calendar.thName');
+    if (key === 'class') return t('calendar.thClass');
+    if (key === 'eta2') return t('calendar.thEta2');
+    if (key.startsWith('m')) return monthLabel(key.slice(1));
+    return '';
+  }
 
   function updateCalendarSortIndicators() {
     document.querySelectorAll('#calendar-table th[data-sort]').forEach((th) => {
       const key = th.dataset.sort;
-      const base = CAL_HEADER_LABELS[key] || '';
+      const base = calHeaderLabel(key);
       const arrow = calendarSortKey === key ? (calendarSortDir === 1 ? ' ▲' : ' ▼') : '';
       const labelSpan = th.querySelector('.th-label');
       if (labelSpan) labelSpan.textContent = base + arrow;
@@ -564,7 +669,7 @@ function showFatalError(detail) {
       let av, bv;
       if (calendarSortKey === 'name') { av = a.name; bv = b.name; return calendarSortDir * av.localeCompare(bv, 'ja'); }
       if (calendarSortKey === 'eta2') { av = a.eta2; bv = b.eta2; }
-      else if (calendarSortKey === 'class') { av = a.classification.label; bv = b.classification.label; return calendarSortDir * av.localeCompare(bv, 'ja'); }
+      else if (calendarSortKey === 'class') { av = clsLabel(a.classification.key); bv = clsLabel(b.classification.key); return calendarSortDir * av.localeCompare(bv, 'ja'); }
       else {
         const idx = parseInt(calendarSortKey.replace('m', ''), 10) - 1;
         av = a.seasonal[idx].index ?? -1;
@@ -610,7 +715,7 @@ function showFatalError(detail) {
     tr.innerHTML = `
       <td class="name-cell">${escapeHtml(c.name)}</td>
       ${monthCells}
-      <td><span class="class-tag" style="background:var(--${c.classification.key}-bg); color:var(--${c.classification.key});">${c.classification.label}</span></td>
+      <td><span class="class-tag" style="background:var(--${c.classification.key}-bg); color:var(--${c.classification.key});">${escapeHtml(clsLabel(c.classification.key))}</span></td>
       <td class="pct-cell">${fmtPct(c.eta2)}</td>
     `;
     tr.addEventListener('click', () => openProductDetail(c.name));
@@ -652,7 +757,7 @@ function showFatalError(detail) {
       const seen = new Map();
       products.forEach((p) => {
         const a = SalesStats.analyze(p.rows);
-        seen.set(a.classification.key, a.classification.label);
+        seen.set(a.classification.key, clsLabel(a.classification.key));
       });
       valueList = Array.from(seen, ([value, label]) => ({ value, label }));
     }
@@ -661,12 +766,12 @@ function showFatalError(detail) {
     const pop = document.createElement('div');
     pop.className = 'col-filter-popover';
 
-    const searchHtml = colKey === 'name' ? `<input type="text" class="col-filter-search" placeholder="検索..." />` : '';
+    const searchHtml = colKey === 'name' ? `<input type="text" class="col-filter-search" placeholder="${escapeHtml(t('calendar.filterSearchPlaceholder'))}" />` : '';
     pop.innerHTML = `
       ${searchHtml}
       <div class="col-filter-actions">
-        <button type="button" data-act="all">すべて選択</button>
-        <button type="button" data-act="none">すべて解除</button>
+        <button type="button" data-act="all">${escapeHtml(t('calendar.filterAll'))}</button>
+        <button type="button" data-act="none">${escapeHtml(t('calendar.filterNone'))}</button>
       </div>
       <div class="col-filter-list">
         ${valueList.map((v) => `
@@ -733,6 +838,21 @@ function showFatalError(detail) {
   function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
+
+  // Re-render dynamically-built content (tables, charts, lists) on language
+  // change — static text is handled by I18N's own data-i18n pass. Detail-page
+  // content is only re-rendered if that view is currently visible, so a
+  // language switch never force-navigates the user back to a product they
+  // already left.
+  document.addEventListener('langchange', () => {
+    closePopover();
+    renderProductsList();
+    renderCalendar();
+    renderNotesView();
+    if (currentProduct && document.getElementById('view-detail').classList.contains('is-active')) {
+      renderProductDetailContent(currentProduct);
+    }
+  });
 
   // init
   renderProductsList();

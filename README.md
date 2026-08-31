@@ -1,8 +1,11 @@
-# Sales Ledger — 商品別 季節性・トレンド分析
+# Total Health Design Sales Ledger — 商品別 季節性・トレンド分析
 
 A static web app for uploading per-product sales export files (like `テラクレ.xlsx`),
 storing them, and running the same seasonality-vs-campaign analysis you've been doing
 by hand — automatically, for every product, in one comparison calendar.
+
+Available in Japanese and English — toggle in the top-right corner. The choice is
+remembered (via `localStorage`) for your next visit.
 
 ## What it does
 
@@ -19,6 +22,13 @@ by hand — automatically, for every product, in one comparison calendar.
   cause: 客単価上昇 / 既存顧客の再購買 / 新規顧客の増加, plus a free-text note you can attach
   to any spike — click メモを追加 to record the real reason once you know it, e.g. a
   campaign name), lowest months, and the full raw monthly table.
+- **メモ (Notes)** — every note you've recorded across every product, in one searchable, sortable
+  table. This is the canonical place to find a note, not just a convenience: if a product gets
+  new data and a bigger spike bumps an older noted month out of that product's own top-10 list,
+  the note itself is never deleted — it just stops appearing on that product's detail page. This
+  view always shows it regardless of current ranking. Search matches both product name and note
+  text (e.g. search "campaign" to find every spike you tagged with that reason, across every
+  product).
 - **季節カレンダー** — every stored product's monthly seasonal index side by side, colour-coded,
   sortable by any month or by η² — this is the automated version of your master Google Sheet.
   Each row's single highest month is marked with a ★. 商品名 and 判定 columns have an
@@ -92,9 +102,10 @@ sales-analyzer/
 ├── index.html
 ├── css/style.css
 └── js/
+    ├── i18n.js    # ja/en translation dictionary + language switching
     ├── db.js      # IndexedDB wrapper
     ├── parse.js   # xlsx → structured rows (SheetJS)
-    ├── stats.js   # seasonal index / eta^2 / spike diagnostics
+    ├── stats.js   # seasonal index / eta^2 / spike diagnostics (language-agnostic)
     └── app.js     # view routing + rendering
 ```
 

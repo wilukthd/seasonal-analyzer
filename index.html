@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>商品売上分析 | Product Sales Ledger</title>
+<title>商品売上分析 | THD Sales Ledger</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css" />
@@ -14,17 +14,24 @@
 
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true">帳</span>
+      <span class="brand-mark" aria-hidden="true">THD</span>
       <div class="brand-text">
-        <h1>Sales Ledger</h1>
-        <p>商品別 季節性・トレンド分析</p>
+        <h1 data-i18n="app.title">Total Health Design Sales Ledger</h1>
+        <p data-i18n="app.subtitle">商品別 季節性・トレンド分析</p>
       </div>
     </div>
-    <nav class="tabs" role="tablist">
-      <button class="tab-btn is-active" data-view="upload" role="tab">アップロード</button>
-      <button class="tab-btn" data-view="products" role="tab">商品一覧</button>
-      <button class="tab-btn" data-view="calendar" role="tab">季節カレンダー</button>
-    </nav>
+    <div class="topbar-right">
+      <nav class="tabs" role="tablist">
+        <button class="tab-btn is-active" data-view="upload" role="tab" data-i18n="nav.upload">アップロード</button>
+        <button class="tab-btn" data-view="products" role="tab" data-i18n="nav.products">商品一覧</button>
+        <button class="tab-btn" data-view="calendar" role="tab" data-i18n="nav.calendar">季節カレンダー</button>
+        <button class="tab-btn" data-view="notes" role="tab" data-i18n="nav.notes">メモ</button>
+      </nav>
+      <div class="lang-toggle" role="group" aria-label="Language">
+        <button type="button" class="lang-btn is-active" data-lang="ja">日本語</button>
+        <button type="button" class="lang-btn" data-lang="en">English</button>
+      </div>
+    </div>
   </header>
 
   <main class="views">
@@ -32,24 +39,24 @@
     <!-- ===================== UPLOAD VIEW ===================== -->
     <section id="view-upload" class="view is-active">
       <div class="view-head">
-        <h2>ファイルを追加</h2>
-        <p class="hint">商品ごとの売上エクスポート（.xlsx）をドラッグ＆ドロップ、または選択してください。下記のテンプレート形式に対応しています。</p>
+        <h2 data-i18n="upload.heading">ファイルを追加</h2>
+        <p class="hint" data-i18n="upload.hint">商品ごとの売上エクスポート（.xlsx）をドラッグ＆ドロップ、または選択してください。下記のテンプレート形式に対応しています。</p>
       </div>
 
       <label id="dropzone" class="dropzone" for="file-input">
         <input type="file" id="file-input" accept=".xlsx" multiple hidden />
         <div class="dropzone-inner">
           <span class="dz-icon" aria-hidden="true">＋</span>
-          <p class="dz-title">ここにファイルをドロップ</p>
-          <p class="dz-sub">または クリックして選択（複数可）</p>
+          <p class="dz-title" data-i18n="upload.dzTitle">ここにファイルをドロップ</p>
+          <p class="dz-sub" data-i18n="upload.dzSub">または クリックして選択（複数可）</p>
         </div>
       </label>
 
       <div id="upload-log" class="upload-log" aria-live="polite"></div>
 
       <div class="card template-card">
-        <h3>対応フォーマット（列見出しは固定です）</h3>
-        <p class="template-desc">
+        <h3 data-i18n="upload.templateHeading">対応フォーマット（列見出しは固定です）</h3>
+        <p class="template-desc" data-i18n-html="upload.templateDesc">
           以下7つの列見出しを含むシートを読み取ります。列の順番は自由ですが、
           <strong>見出しの文字列は完全一致</strong>している必要があります。
           シート名がそのまま商品名として登録されます。
@@ -58,8 +65,10 @@
           <table class="template-table">
             <thead>
               <tr>
-                <th>月別推移</th><th>売上金額</th><th>購入個数</th><th>購入件数</th>
-                <th>総顧客数</th><th>新規顧客数</th><th>既存顧客数</th>
+                <th data-i18n="upload.thYm">月別推移</th><th data-i18n="upload.thSales">売上金額</th>
+                <th data-i18n="upload.thQty">購入個数</th><th data-i18n="upload.thOrders">購入件数</th>
+                <th data-i18n="upload.thTotalCust">総顧客数</th><th data-i18n="upload.thNewCust">新規顧客数</th>
+                <th data-i18n="upload.thExistCust">既存顧客数</th>
               </tr>
             </thead>
             <tbody>
@@ -73,9 +82,9 @@
           </table>
         </div>
         <ul class="template-notes">
-          <li>年月列（月別推移）は「YY_MM」形式です（例：17_07 = 2017年7月）</li>
-          <li>見出し行はシートの先頭5行以内にある必要があります</li>
-          <li>シート名がそのまま商品名になります（シート名が既定の「Sheet1」のままの場合はファイル名を使用）</li>
+          <li data-i18n="upload.note1">年月列（月別推移）は「YY_MM」形式です（例：17_07 = 2017年7月）</li>
+          <li data-i18n="upload.note2">見出し行はシートの先頭5行以内にある必要があります</li>
+          <li data-i18n="upload.note3">シート名がそのまま商品名になります（シート名が既定の「Sheet1」のままの場合はファイル名を使用）</li>
         </ul>
       </div>
     </section>
@@ -83,36 +92,36 @@
     <!-- ===================== PRODUCTS VIEW ===================== -->
     <section id="view-products" class="view">
       <div class="view-head">
-        <h2>商品一覧</h2>
-        <p class="hint">保存済みの商品データ。行をクリックで詳細な季節性分析を表示します。</p>
+        <h2 data-i18n="products.heading">商品一覧</h2>
+        <p class="hint" data-i18n="products.hint">保存済みの商品データ。行をクリックで詳細な季節性分析を表示します。</p>
       </div>
 
       <div class="filter-bar">
         <div class="filter-group filter-search">
-          <label for="prod-search">商品名で検索</label>
-          <input type="text" id="prod-search" placeholder="商品名..." />
+          <label for="prod-search" data-i18n="products.searchLabel">商品名で検索</label>
+          <input type="text" id="prod-search" data-i18n-placeholder="products.searchPlaceholder" placeholder="商品名..." />
         </div>
         <p id="products-count" class="filter-count-inline"></p>
       </div>
 
       <div id="products-empty" class="empty-state" hidden>
-        <p class="empty-title">まだデータがありません</p>
-        <p class="empty-sub">「アップロード」タブからファイルを追加してください。</p>
+        <p class="empty-title" data-i18n="products.emptyTitle">まだデータがありません</p>
+        <p class="empty-sub" data-i18n="products.emptySub">「アップロード」タブからファイルを追加してください。</p>
       </div>
       <div id="products-no-results" class="empty-state" hidden>
-        <p class="empty-title">条件に一致する商品がありません</p>
-        <p class="empty-sub">検索語を変えてみてください。</p>
+        <p class="empty-title" data-i18n="products.noResultsTitle">条件に一致する商品がありません</p>
+        <p class="empty-sub" data-i18n="products.noResultsSub">検索語を変えてみてください。</p>
       </div>
       <div class="table-wrap products-wrap">
         <table id="products-table">
           <thead>
             <tr>
-              <th data-sort="name" class="sortable">商品名</th>
-              <th data-sort="span" class="sortable">データ期間</th>
-              <th data-sort="months" class="sortable">ヶ月数</th>
-              <th data-sort="class" class="sortable">判定</th>
-              <th data-sort="eta2" class="sortable">季節の影響</th>
-              <th data-sort="last" class="sortable">最終データ月</th>
+              <th data-sort="name" class="sortable" data-i18n="products.thName">商品名</th>
+              <th data-sort="span" class="sortable" data-i18n="products.thSpan">データ期間</th>
+              <th data-sort="months" class="sortable" data-i18n="products.thMonths">ヶ月数</th>
+              <th data-sort="class" class="sortable" data-i18n="products.thClass">判定</th>
+              <th data-sort="eta2" class="sortable" data-i18n="products.thEta2">季節の影響</th>
+              <th data-sort="last" class="sortable" data-i18n="products.thLast">最終データ月</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -123,37 +132,37 @@
     <!-- ===================== PRODUCT DETAIL VIEW ===================== -->
     <section id="view-detail" class="view">
       <div class="view-head detail-head">
-        <button id="back-to-products" class="back-btn">← 商品一覧へ</button>
+        <button id="back-to-products" class="back-btn" data-i18n="detail.back">← 商品一覧へ</button>
         <div>
           <h2 id="detail-title">—</h2>
           <p class="hint" id="detail-sub"></p>
         </div>
-        <button id="delete-product" class="danger-btn">この商品データを削除</button>
+        <button id="delete-product" class="danger-btn" data-i18n="detail.deleteBtn">この商品データを削除</button>
       </div>
 
       <div class="detail-grid">
         <div class="card card-classification">
-          <h3>判定</h3>
+          <h3 data-i18n="detail.judgement">判定</h3>
           <p id="detail-classification-badge" class="class-badge">—</p>
           <p id="detail-classification-text" class="class-text"></p>
           <dl class="stat-row">
-            <div><dt>η²（月要因の説明力）</dt><dd id="detail-eta2">—</dd></div>
-            <div><dt>F値（自由度）</dt><dd id="detail-fval">—</dd></div>
-            <div><dt>データ期間</dt><dd id="detail-span">—</dd></div>
+            <div><dt data-i18n="detail.eta2Label">η²（月要因の説明力）</dt><dd id="detail-eta2">—</dd></div>
+            <div><dt data-i18n="detail.fValueLabel">F値（自由度）</dt><dd id="detail-fval">—</dd></div>
+            <div><dt data-i18n="detail.spanLabel">データ期間</dt><dd id="detail-span">—</dd></div>
           </dl>
         </div>
 
         <div class="card card-seasonal">
-          <h3>月別季節指数（その年平均を100%とした場合）</h3>
+          <h3 data-i18n="detail.seasonalHeading">月別季節指数（その年平均を100%とした場合）</h3>
           <div id="seasonal-bars" class="seasonal-bars"></div>
 
           <div class="trend-section">
             <div class="trend-header">
-              <h3>売上推移</h3>
+              <h3 data-i18n="detail.trendHeading">売上推移</h3>
               <div class="trend-controls">
                 <div class="trend-mode-group">
-                  <button type="button" class="trend-mode-btn is-active" data-mode="all">全期間</button>
-                  <button type="button" class="trend-mode-btn" data-mode="year">年別</button>
+                  <button type="button" class="trend-mode-btn is-active" data-mode="all" data-i18n="detail.trendAll">全期間</button>
+                  <button type="button" class="trend-mode-btn" data-mode="year" data-i18n="detail.trendYear">年別</button>
                 </div>
                 <select id="trend-year-select" class="trend-year-select" hidden></select>
               </div>
@@ -163,30 +172,37 @@
         </div>
 
         <div class="card card-yoy">
-          <h3>年別平均売上・前年比</h3>
+          <h3 data-i18n="detail.yoyHeading">年別平均売上・前年比</h3>
           <div class="table-wrap">
             <table id="yoy-table">
-              <thead><tr><th>年</th><th>月平均売上</th><th>対前年比</th></tr></thead>
+              <thead><tr>
+                <th data-i18n="detail.thYear">年</th><th data-i18n="detail.thAvgSales">月平均売上</th><th data-i18n="detail.thYoy">対前年比</th>
+              </tr></thead>
               <tbody></tbody>
             </table>
           </div>
         </div>
 
         <div class="card card-spikes">
-          <h3>スパイク上位 <span class="muted">（対年平均比が高い順）</span></h3>
+          <h3><span data-i18n="detail.spikesHeading">スパイク上位</span> <span class="muted" data-i18n="detail.spikesSub">（対年平均比が高い順）</span></h3>
           <ol id="spike-list" class="spike-list"></ol>
         </div>
 
         <div class="card card-dips">
-          <h3>下位月 <span class="muted">（対年平均比が低い順）</span></h3>
+          <h3><span data-i18n="detail.dipsHeading">下位月</span> <span class="muted" data-i18n="detail.dipsSub">（対年平均比が低い順）</span></h3>
           <ol id="dip-list" class="spike-list"></ol>
         </div>
 
         <div class="card card-raw">
-          <h3>月別実績</h3>
+          <h3 data-i18n="detail.rawHeading">月別実績</h3>
           <div class="table-wrap table-wrap-tall">
             <table id="raw-table">
-              <thead><tr><th>年月</th><th>売上金額</th><th>購入個数</th><th>購入件数</th><th>総顧客数</th><th>新規顧客数</th><th>既存顧客数</th></tr></thead>
+              <thead><tr>
+                <th data-i18n="detail.thRawYm">年月</th><th data-i18n="detail.thRawSales">売上金額</th>
+                <th data-i18n="detail.thRawQty">購入個数</th><th data-i18n="detail.thRawOrders">購入件数</th>
+                <th data-i18n="detail.thRawTotalCust">総顧客数</th><th data-i18n="detail.thRawNewCust">新規顧客数</th>
+                <th data-i18n="detail.thRawExistCust">既存顧客数</th>
+              </tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -197,19 +213,19 @@
     <!-- ===================== CALENDAR VIEW ===================== -->
     <section id="view-calendar" class="view">
       <div class="view-head">
-        <h2>季節カレンダー</h2>
-        <p class="hint">全商品の月別季節指数を並べた一覧。η²が高い（季節性主導型）ほど濃く色付けしています。列見出しクリックで並び替え、▾アイコンで絞り込み（Excelのフィルターと同じ要領です）。</p>
+        <h2 data-i18n="calendar.heading">季節カレンダー</h2>
+        <p class="hint" data-i18n="calendar.hint">全商品の月別季節指数を並べた一覧。η²が高い（季節性主導型）ほど濃く色付けしています。列見出しクリックで並び替え、▾アイコンで絞り込み（Excelのフィルターと同じ要領です）。</p>
       </div>
 
       <p id="calendar-count" class="filter-count"></p>
 
       <div id="calendar-empty" class="empty-state" hidden>
-        <p class="empty-title">比較できる商品がありません</p>
-        <p class="empty-sub">2つ以上の商品データをアップロードすると一覧表示されます。</p>
+        <p class="empty-title" data-i18n="calendar.emptyTitle">比較できる商品がありません</p>
+        <p class="empty-sub" data-i18n="calendar.emptySub">2つ以上の商品データをアップロードすると一覧表示されます。</p>
       </div>
       <div id="calendar-no-results" class="empty-state" hidden>
-        <p class="empty-title">条件に一致する商品がありません</p>
-        <p class="empty-sub">フィルター条件を変えてみてください。</p>
+        <p class="empty-title" data-i18n="calendar.noResultsTitle">条件に一致する商品がありません</p>
+        <p class="empty-sub" data-i18n="calendar.noResultsSub">フィルター条件を変えてみてください。</p>
       </div>
       <div class="table-wrap calendar-wrap">
         <table id="calendar-table">
@@ -225,7 +241,7 @@
             <tr>
               <th data-sort="name" class="sortable">
                 <span class="th-label">商品名</span>
-                <button type="button" class="th-filter-btn" data-filter-col="name" title="絞り込み">▾</button>
+                <button type="button" class="th-filter-btn" data-filter-col="name" data-i18n-title="calendar.filterTitle" title="絞り込み">▾</button>
               </th>
               <th data-sort="m1" class="sortable">1月</th><th data-sort="m2" class="sortable">2月</th><th data-sort="m3" class="sortable">3月</th>
               <th data-sort="m4" class="sortable">4月</th><th data-sort="m5" class="sortable">5月</th><th data-sort="m6" class="sortable">6月</th>
@@ -233,9 +249,47 @@
               <th data-sort="m10" class="sortable">10月</th><th data-sort="m11" class="sortable">11月</th><th data-sort="m12" class="sortable">12月</th>
               <th data-sort="class" class="sortable">
                 <span class="th-label">判定</span>
-                <button type="button" class="th-filter-btn" data-filter-col="class" title="絞り込み">▾</button>
+                <button type="button" class="th-filter-btn" data-filter-col="class" data-i18n-title="calendar.filterTitle" title="絞り込み">▾</button>
               </th>
               <th data-sort="eta2" class="sortable">季節の影響</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ===================== NOTES VIEW ===================== -->
+    <section id="view-notes" class="view">
+      <div class="view-head">
+        <h2 data-i18n="notes.heading">メモ一覧</h2>
+        <p class="hint" data-i18n="notes.hint">全商品に記録したメモの一覧です。スパイク上位圏外になったメモもここで確認できます。</p>
+      </div>
+
+      <div class="filter-bar">
+        <div class="filter-group filter-search">
+          <label for="notes-search" data-i18n="notes.searchLabel">メモ・商品名で検索</label>
+          <input type="text" id="notes-search" data-i18n-placeholder="notes.searchPlaceholder" placeholder="検索..." />
+        </div>
+        <p id="notes-count" class="filter-count-inline"></p>
+      </div>
+
+      <div id="notes-empty" class="empty-state" hidden>
+        <p class="empty-title" data-i18n="notes.emptyTitle">まだメモがありません</p>
+        <p class="empty-sub" data-i18n="notes.emptySub">商品詳細ページのスパイク上位からメモを追加できます。</p>
+      </div>
+      <div id="notes-no-results" class="empty-state" hidden>
+        <p class="empty-title" data-i18n="notes.noResultsTitle">条件に一致するメモがありません</p>
+        <p class="empty-sub" data-i18n="notes.noResultsSub">検索語を変えてみてください。</p>
+      </div>
+      <div class="table-wrap notes-wrap">
+        <table id="notes-table">
+          <thead>
+            <tr>
+              <th data-sort="product" class="sortable" data-i18n="notes.thProduct">商品名</th>
+              <th data-sort="ym" class="sortable" data-i18n="notes.thYm">年月</th>
+              <th data-i18n="notes.thNote">メモ</th>
+              <th data-sort="ratio" class="sortable" data-i18n="notes.thRatio">対年平均比</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -246,11 +300,12 @@
   </main>
 
   <footer class="app-footer">
-    <p>データはこのブラウザ内（IndexedDB）に保存されます。他の端末やブラウザとは同期されません。</p>
+    <p data-i18n="footer.note">データはこのブラウザ内（IndexedDB）に保存されます。他の端末やブラウザとは同期されません。</p>
   </footer>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="js/i18n.js"></script>
 <script src="js/db.js"></script>
 <script src="js/parse.js"></script>
 <script src="js/stats.js"></script>

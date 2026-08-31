@@ -73,28 +73,15 @@ const SalesStats = (() => {
     return { eta2, F, dfBetween, dfWithin };
   }
 
+  // Classification is keyed only — display label/description text lives in
+  // i18n.js so the same computation works for any UI language.
   function classify(eta2) {
-    if (eta2 >= 0.25) {
-      return {
-        key: 'seasonal',
-        label: '季節性主導型',
-        text: '月の要因（季節性）で売上の変動の大部分を説明できます。毎年同じ時期に繰り返す傾向が強いタイプです。',
-      };
-    }
-    if (eta2 >= 0.10) {
-      return {
-        key: 'mixed',
-        label: '混合型（季節性＋単発要因）',
-        text: '月の要因である程度は説明できますが、単発のキャンペーン等の影響も無視できません。両方を要因として管理する必要があります。',
-      };
-    }
-    return {
-      key: 'campaign',
-      label: 'キャンペーン/イベント主導型',
-      text: '月による説明力は小さく、特定の施策・キャンペーンなど単発要因が売上変動の主因である可能性が高いタイプです。',
-    };
+    if (eta2 >= 0.25) return { key: 'seasonal' };
+    if (eta2 >= 0.10) return { key: 'mixed' };
+    return { key: 'campaign' };
   }
 
+  // Returns a factor KEY (not display text) — i18n.js translates it.
   function diagnoseFactor(row, rowsWithRatio) {
     const aovs = rowsWithRatio.filter((r) => r.orderCount > 0).map((r) => r.sales / r.orderCount);
     const meanAov = aovs.length ? mean(aovs) : 0;
@@ -108,11 +95,11 @@ const SalesStats = (() => {
     const meanNewPct = newPcts.length ? mean(newPcts) : 0;
     const newPct = row.totalCustomers > 0 ? row.newCustomers / row.totalCustomers : 0;
 
-    if (meanAov > 0 && aov > meanAov * 1.15) return '客単価上昇（まとめ買い等）';
-    if (custRatio > 1.15 && newPct <= meanNewPct * 1.3) return '既存顧客の再購買';
-    if (meanNewPct > 0 && newPct > meanNewPct * 1.5) return '新規顧客の増加';
-    if (custRatio > 1.1) return '顧客数の増加';
-    return '要因不明瞭';
+    if (meanAov > 0 && aov > meanAov * 1.15) return 'aov_increase';
+    if (custRatio > 1.15 && newPct <= meanNewPct * 1.3) return 'repeat_purchase';
+    if (meanNewPct > 0 && newPct > meanNewPct * 1.5) return 'new_customer_growth';
+    if (custRatio > 1.1) return 'customer_increase';
+    return 'unclear';
   }
 
   function spikesAndDips(rowsWithRatio, topN = 10, bottomN = 5) {
@@ -121,7 +108,7 @@ const SalesStats = (() => {
     const sigma = std(ratios, mu) || 1;
     const withZ = rowsWithRatio.map((r) => ({ ...r, z: (r.ratio - mu) / sigma }));
     const sorted = [...withZ].sort((a, b) => b.ratio - a.ratio);
-    const spikes = sorted.slice(0, topN).map((r) => ({ ...r, factor: diagnoseFactor(r, rowsWithRatio) }));
+    const spikes = sorted.slice(0, topN).map((r) => ({ ...r, factorKey: diagnoseFactor(r, rowsWithRatio) }));
     const dips = [...withZ].sort((a, b) => a.ratio - b.ratio).slice(0, bottomN);
     return { spikes, dips };
   }
