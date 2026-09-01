@@ -51,6 +51,7 @@ const I18N_DICT = {
 
     'detail.back': '← 商品一覧へ',
     'detail.deleteBtn': 'この商品データを削除',
+    'detail.printBtn': '🖨 印刷 / PDF保存',
     'detail.deleteConfirm': (name) => `「${name}」のデータを削除しますか？この操作は取り消せません。`,
     'detail.sub': (first, last, file) => `${first} 〜 ${last} ・ 元ファイル: ${file}`,
     'detail.judgement': '判定',
@@ -82,7 +83,7 @@ const I18N_DICT = {
     'detail.yearOption': (y) => `${y}年`,
 
     'calendar.heading': '季節カレンダー',
-    'calendar.hint': '全商品の月別季節指数を並べた一覧。η²が高い（季節性主導型）ほど濃く色付けしています。列見出しクリックで並び替え、▾アイコンで絞り込み（Excelのフィルターと同じ要領です）。',
+    'calendar.hint': '全商品の月別季節指数を並べた一覧。η²が高い（季節性主導型）ほど濃く色付けしています（▲=平均超・▼=平均未満）。列見出しクリックで並び替え、▾アイコンで絞り込み（Excelのフィルターと同じ要領です）。',
     'calendar.emptyTitle': '比較できる商品がありません',
     'calendar.emptySub': '2つ以上の商品データをアップロードすると一覧表示されます。',
     'calendar.noResultsTitle': '条件に一致する商品がありません',
@@ -104,6 +105,12 @@ const I18N_DICT = {
     'notes.noResultsSub': '検索語を変えてみてください。',
     'notes.thProduct': '商品名', 'notes.thYm': '年月', 'notes.thNote': 'メモ', 'notes.thRatio': '対年平均比',
     'notes.count': (shown, total) => `${shown} / ${total} 件のメモを表示中`,
+
+    'notesView.list': '一覧',
+    'notesView.calendar': '月別',
+    'notesCal.hint': '同じ月に複数の商品でメモがある場合はハイライトされます（会社全体の施策の可能性）。',
+    'notesCal.noEntries': 'メモなし',
+    'notesCal.productCount': (n) => `${n}商品でメモあり`,
 
     'classification.seasonal.label': '季節性主導型',
     'classification.seasonal.text': '月の要因（季節性）で売上の変動の大部分を説明できます。毎年同じ時期に繰り返す傾向が強いタイプです。',
@@ -170,6 +177,7 @@ const I18N_DICT = {
 
     'detail.back': '← Back to Products',
     'detail.deleteBtn': 'Delete this product',
+    'detail.printBtn': '🖨 Print / Save as PDF',
     'detail.deleteConfirm': (name) => `Delete all data for "${name}"? This cannot be undone.`,
     'detail.sub': (first, last, file) => `${first} – ${last} · Source file: ${file}`,
     'detail.judgement': 'Type',
@@ -201,7 +209,7 @@ const I18N_DICT = {
     'detail.yearOption': (y) => String(y),
 
     'calendar.heading': 'Seasonal Calendar',
-    'calendar.hint': 'All products\u2019 monthly seasonal index side by side. Darker shading = higher η² (more seasonally driven). Click a column header to sort, or the ▾ icon to filter (works like an Excel filter).',
+    'calendar.hint': 'All products\u2019 monthly seasonal index side by side. Darker shading = higher η² (more seasonally driven); ▲ = above average, ▼ = below average. Click a column header to sort, or the ▾ icon to filter (works like an Excel filter).',
     'calendar.emptyTitle': 'No products to compare',
     'calendar.emptySub': 'Upload 2 or more products to see this list.',
     'calendar.noResultsTitle': 'No products match',
@@ -223,6 +231,12 @@ const I18N_DICT = {
     'notes.noResultsSub': 'Try a different search term.',
     'notes.thProduct': 'Product', 'notes.thYm': 'Month', 'notes.thNote': 'Note', 'notes.thRatio': 'vs. Year Avg',
     'notes.count': (shown, total) => `Showing ${shown} / ${total} notes`,
+
+    'notesView.list': 'List',
+    'notesView.calendar': 'By Month',
+    'notesCal.hint': 'Months where 2+ products have notes are highlighted \u2014 these may indicate a company-wide campaign.',
+    'notesCal.noEntries': 'No notes',
+    'notesCal.productCount': (n) => `${n} products noted`,
 
     'classification.seasonal.label': 'Seasonal-driven',
     'classification.seasonal.text': 'Month explains most of the variation in sales — this product reliably peaks at the same time each year.',

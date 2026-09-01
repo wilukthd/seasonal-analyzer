@@ -28,7 +28,10 @@ remembered (via `localStorage`) for your next visit.
   the note itself is never deleted — it just stops appearing on that product's detail page. This
   view always shows it regardless of current ranking. Search matches both product name and note
   text (e.g. search "campaign" to find every spike you tagged with that reason, across every
-  product).
+  product). Toggle to **月別 (By Month)** to group notes by calendar month, ignoring year — any
+  month where 2+ different products have notes is highlighted with a product-count badge, since
+  that's a signal worth noticing (a recurring, company-wide campaign) that the flat list view
+  wouldn't otherwise surface.
 - **季節カレンダー** — every stored product's monthly seasonal index side by side, colour-coded,
   sortable by any month or by η² — this is the automated version of your master Google Sheet.
   Each row's single highest month is marked with a ★. 商品名 and 判定 columns have an
@@ -55,6 +58,20 @@ full history again, like your current file, or eventually just the newest months
 upload log tells you exactly what changed: `新規 X ヶ月 / 更新 Y ヶ月`, or `変更なし` if
 nothing did. On the 商品一覧 list, any product whose latest month is 2+ months behind
 today gets a `更新推奨` tag as a lightweight reminder of what still needs a fresh file.
+
+## Printing / sharing a single product
+
+Each product's detail page has a 🖨 print button. It uses the browser's native print
+dialog — "Save as PDF" there gives you a clean, single-product handout without the
+navigation, filters, or edit controls, useful for sharing one product's analysis with
+a teammate before the team-sharing/backend phase exists.
+
+## Accessibility note on the calendar heat map
+
+The seasonal-index color scale (red = below average, green = above average) is never
+the only signal — every colored cell also carries a ▲ (above average) or ▼ (below
+average) symbol, so the calendar still reads correctly under red-green color
+blindness, not just for typical color vision.
 
 ## If something looks broken (blank table, buttons doing nothing)
 

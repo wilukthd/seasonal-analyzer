@@ -284,7 +284,7 @@ function showFatalError(detail) {
 
   function initTrendSection(rows) {
     trendMode = 'all';
-    document.querySelectorAll('.trend-mode-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.mode === 'all'));
+    document.querySelectorAll('.trend-controls .trend-mode-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.mode === 'all'));
 
     const years = Array.from(new Set(rows.map((r) => r.year))).sort((a, b) => a - b);
     const yearSelect = document.getElementById('trend-year-select');
@@ -296,10 +296,10 @@ function showFatalError(detail) {
     renderTrendChart(rows);
   }
 
-  document.querySelectorAll('.trend-mode-btn').forEach((btn) => {
+  document.querySelectorAll('.trend-controls .trend-mode-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       trendMode = btn.dataset.mode;
-      document.querySelectorAll('.trend-mode-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
+      document.querySelectorAll('.trend-controls .trend-mode-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
       document.getElementById('trend-year-select').hidden = trendMode !== 'year';
       if (currentProduct) renderTrendChart(currentProduct.rows);
     });
@@ -503,6 +503,10 @@ function showFatalError(detail) {
     });
   }
 
+  document.getElementById('print-detail').addEventListener('click', () => {
+    window.print();
+  });
+
   document.getElementById('delete-product').addEventListener('click', async () => {
     if (!currentProduct) return;
     if (!confirm(t('detail.deleteConfirm', currentProduct.name))) return;
@@ -516,14 +520,17 @@ function showFatalError(detail) {
   let notesSearch = '';
   let notesSortKey = 'ym';
   let notesSortDir = -1;
+  let notesMode = 'list';
 
   async function renderNotesView() {
     const products = await SalesDB.getAll();
     const tbody = document.querySelector('#notes-table tbody');
+    const calGrid = document.getElementById('notes-calendar-grid');
     const empty = document.getElementById('notes-empty');
     const noResults = document.getElementById('notes-no-results');
     const countEl = document.getElementById('notes-count');
     tbody.innerHTML = '';
+    calGrid.innerHTML = '';
 
     const allNotes = [];
     products.forEach((p) => {
@@ -555,33 +562,90 @@ function showFatalError(detail) {
       ? allNotes.filter((n) => n.productName.toLowerCase().includes(q) || n.note.toLowerCase().includes(q))
       : allNotes;
 
-    filtered.sort((a, b) => {
-      let av, bv;
-      switch (notesSortKey) {
-        case 'product': av = a.productName; bv = b.productName; break;
-        case 'ratio': av = a.ratio ?? -Infinity; bv = b.ratio ?? -Infinity; break;
-        default: av = a.ymKey; bv = b.ymKey;
-      }
-      if (typeof av === 'string') return notesSortDir * av.localeCompare(bv, 'ja');
-      return notesSortDir * (av - bv);
-    });
-
     countEl.textContent = t('notes.count', filtered.length, allNotes.length);
     noResults.hidden = filtered.length > 0;
 
-    filtered.forEach((n) => {
-      const tr = document.createElement('tr');
-      tr.style.cursor = 'pointer';
-      tr.innerHTML = `
-        <td class="name-cell">${escapeHtml(n.productName)}</td>
-        <td class="pct-cell">${n.ymKey}</td>
-        <td class="note-cell">${escapeHtml(n.note)}</td>
-        <td class="pct-cell">${n.ratio != null ? fmtPct(n.ratio, 0) : '—'}</td>
-      `;
-      tr.addEventListener('click', () => openProductDetail(n.productName));
-      tbody.appendChild(tr);
-    });
+    if (notesMode === 'list') {
+      const sorted = [...filtered].sort((a, b) => {
+        let av, bv;
+        switch (notesSortKey) {
+          case 'product': av = a.productName; bv = b.productName; break;
+          case 'ratio': av = a.ratio ?? -Infinity; bv = b.ratio ?? -Infinity; break;
+          default: av = a.ymKey; bv = b.ymKey;
+        }
+        if (typeof av === 'string') return notesSortDir * av.localeCompare(bv, 'ja');
+        return notesSortDir * (av - bv);
+      });
+      sorted.forEach((n) => {
+        const tr = document.createElement('tr');
+        tr.style.cursor = 'pointer';
+        tr.innerHTML = `
+          <td class="name-cell">${escapeHtml(n.productName)}</td>
+          <td class="pct-cell">${n.ymKey}</td>
+          <td class="note-cell">${escapeHtml(n.note)}</td>
+          <td class="pct-cell">${n.ratio != null ? fmtPct(n.ratio, 0) : '—'}</td>
+        `;
+        tr.addEventListener('click', () => openProductDetail(n.productName));
+        tbody.appendChild(tr);
+      });
+    } else {
+      renderNotesCalendarGrid(calGrid, filtered);
+    }
   }
+
+  // Groups notes by calendar month (ignoring year) so recurring events —
+  // a campaign that touches several products every October, say — become
+  // visible even though nothing in the flat list view would surface that.
+  function renderNotesCalendarGrid(grid, notes) {
+    const byMonth = {};
+    for (let m = 1; m <= 12; m++) byMonth[m] = [];
+    notes.forEach((n) => {
+      const month = Number(n.ymKey.split('-')[1]);
+      byMonth[month].push(n);
+    });
+
+    for (let m = 1; m <= 12; m++) {
+      const entries = [...byMonth[m]].sort((a, b) => b.ymKey.localeCompare(a.ymKey));
+      const distinctProducts = new Set(entries.map((e) => e.productName)).size;
+      const card = document.createElement('div');
+      card.className = 'card notes-month-card' + (distinctProducts >= 2 ? ' has-cross-product' : '');
+
+      const entriesHtml = entries.length
+        ? entries.map((e) => `
+            <li>
+              <div class="nmc-meta">
+                <span class="nmc-product">${escapeHtml(e.productName)}</span>
+                <span class="nmc-year">${escapeHtml(e.ymKey.split('-')[0])}</span>
+              </div>
+              <p class="nmc-note">${escapeHtml(e.note)}</p>
+            </li>
+          `).join('')
+        : `<li class="nmc-empty">${escapeHtml(t('notesCal.noEntries'))}</li>`;
+
+      card.innerHTML = `
+        <div class="nmc-header">
+          <h4>${monthLabel(m)}</h4>
+          ${distinctProducts >= 2 ? `<span class="nmc-badge">${escapeHtml(t('notesCal.productCount', distinctProducts))}</span>` : ''}
+        </div>
+        <ul class="nmc-list">${entriesHtml}</ul>
+      `;
+      card.querySelectorAll('li:not(.nmc-empty)').forEach((li, i) => {
+        li.style.cursor = 'pointer';
+        li.addEventListener('click', () => openProductDetail(entries[i].productName));
+      });
+      grid.appendChild(card);
+    }
+  }
+
+  document.querySelectorAll('.notes-mode-group .trend-mode-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      notesMode = btn.dataset.mode;
+      document.querySelectorAll('.notes-mode-group .trend-mode-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
+      document.getElementById('notes-list-mode').hidden = notesMode !== 'list';
+      document.getElementById('notes-calendar-mode').hidden = notesMode !== 'calendar';
+      renderNotesView();
+    });
+  });
 
   document.getElementById('notes-search').addEventListener('input', (e) => {
     notesSearch = e.target.value.trim();
@@ -693,6 +757,9 @@ function showFatalError(detail) {
   // Below 100% shades toward red, above shades toward green; saturation
   // grows with distance from the midpoint so it reads clearly even on a
   // light background, and text flips to white once the fill gets dark.
+  // Color is never the ONLY signal: a ▲/▼ symbol carries the same
+  // above/below-average distinction so the calendar still reads correctly
+  // for red-green color blindness.
   const HEAT_LOW = '#B4483C';   // strong red, below-average months
   const HEAT_HIGH = '#1F7A5C';  // strong green, above-average months
   function pctColor(index) {
@@ -704,13 +771,21 @@ function showFatalError(detail) {
     return `style="background:${bg}; color:${textColor}; font-weight:700;"`;
   }
 
+  function pctSymbol(index) {
+    if (index == null) return '';
+    const t = (index - 1) / 0.5;
+    if (Math.abs(t) < 0.04) return '';
+    return t > 0 ? ' ▲' : ' ▼';
+  }
+
   function buildCalendarRow(c) {
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
     const monthCells = c.seasonal.map((s) => {
       const isPeak = s.index != null && s.month === c.peakMonth;
       const peakMark = isPeak ? ' ★' : '';
-      return `<td class="pct-cell" ${pctColor(s.index)}>${s.index != null ? fmtPct(s.index, 0) + peakMark : '—'}</td>`;
+      const symbol = s.index != null ? pctSymbol(s.index) : '';
+      return `<td class="pct-cell" ${pctColor(s.index)}>${s.index != null ? fmtPct(s.index, 0) + symbol + peakMark : '—'}</td>`;
     }).join('');
     tr.innerHTML = `
       <td class="name-cell">${escapeHtml(c.name)}</td>

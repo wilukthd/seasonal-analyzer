@@ -137,7 +137,10 @@
           <h2 id="detail-title">—</h2>
           <p class="hint" id="detail-sub"></p>
         </div>
-        <button id="delete-product" class="danger-btn" data-i18n="detail.deleteBtn">この商品データを削除</button>
+        <div class="detail-head-actions">
+          <button id="print-detail" class="print-btn" data-i18n="detail.printBtn">🖨 印刷 / PDF保存</button>
+          <button id="delete-product" class="danger-btn" data-i18n="detail.deleteBtn">この商品データを削除</button>
+        </div>
       </div>
 
       <div class="detail-grid">
@@ -214,7 +217,7 @@
     <section id="view-calendar" class="view">
       <div class="view-head">
         <h2 data-i18n="calendar.heading">季節カレンダー</h2>
-        <p class="hint" data-i18n="calendar.hint">全商品の月別季節指数を並べた一覧。η²が高い（季節性主導型）ほど濃く色付けしています。列見出しクリックで並び替え、▾アイコンで絞り込み（Excelのフィルターと同じ要領です）。</p>
+        <p class="hint" data-i18n="calendar.hint">全商品の月別季節指数を並べた一覧。η²が高い（季節性主導型）ほど濃く色付けしています（▲=平均超・▼=平均未満）。列見出しクリックで並び替え、▾アイコンで絞り込み（Excelのフィルターと同じ要領です）。</p>
       </div>
 
       <p id="calendar-count" class="filter-count"></p>
@@ -266,6 +269,11 @@
         <p class="hint" data-i18n="notes.hint">全商品に記録したメモの一覧です。スパイク上位圏外になったメモもここで確認できます。</p>
       </div>
 
+      <div class="trend-mode-group notes-mode-group">
+        <button type="button" class="trend-mode-btn is-active" data-mode="list" data-i18n="notesView.list">一覧</button>
+        <button type="button" class="trend-mode-btn" data-mode="calendar" data-i18n="notesView.calendar">月別</button>
+      </div>
+
       <div class="filter-bar">
         <div class="filter-group filter-search">
           <label for="notes-search" data-i18n="notes.searchLabel">メモ・商品名で検索</label>
@@ -282,7 +290,8 @@
         <p class="empty-title" data-i18n="notes.noResultsTitle">条件に一致するメモがありません</p>
         <p class="empty-sub" data-i18n="notes.noResultsSub">検索語を変えてみてください。</p>
       </div>
-      <div class="table-wrap notes-wrap">
+
+      <div id="notes-list-mode" class="table-wrap notes-wrap">
         <table id="notes-table">
           <thead>
             <tr>
@@ -294,6 +303,11 @@
           </thead>
           <tbody></tbody>
         </table>
+      </div>
+
+      <div id="notes-calendar-mode" hidden>
+        <p class="hint notes-cal-hint" data-i18n="notesCal.hint">同じ月に複数の商品でメモがある場合はハイライトされます（会社全体の施策の可能性）。</p>
+        <div id="notes-calendar-grid" class="notes-calendar-grid"></div>
       </div>
     </section>
 
