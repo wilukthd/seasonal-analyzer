@@ -795,6 +795,9 @@ tr:hover td { background: var(--paper); }
 .calendar-wrap td.pct-cell {
   font-family: var(--font-mono);
   text-align: center;
+  white-space: normal;
+  line-height: 1.3;
+  word-spacing: -1px;
 }
 .calendar-wrap th:not(:first-child) { text-align: center; }
 .calendar-wrap td:not(.name-cell) { text-align: center; }
