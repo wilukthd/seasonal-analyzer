@@ -460,10 +460,60 @@ html, body {
 
 .season-bar.above { background: var(--seasonal); }
 .season-bar.below { background: var(--campaign); }
-.season-bar.trend { background: var(--campaign); }
 
 .season-label { font-size: 10px; color: var(--ink-soft); font-family: var(--font-mono); }
 .season-val { font-size: 10px; font-family: var(--font-mono); font-weight: 700; }
+
+/* year-mode trend chart — value labels are anchored to each bar's own top
+   edge (not a fixed row) so they stay next to their bar regardless of how
+   short or tall it is relative to the others. */
+.trend-year-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 220px;
+  padding-top: 26px; /* headroom for the tallest bar's label */
+}
+
+.trend-year-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  gap: 6px;
+  min-width: 0;
+}
+
+.trend-year-track {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+}
+
+.trend-year-bar {
+  width: 100%;
+  background: var(--campaign);
+  border-radius: 2px 2px 0 0;
+  min-height: 2px;
+  position: relative;
+}
+
+.trend-year-val {
+  position: absolute;
+  top: -18px;
+  left: -6px;
+  right: -6px;
+  text-align: center;
+  font-size: 9.5px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.trend-year-label { font-size: 10px; color: var(--ink-soft); font-family: var(--font-mono); }
 
 /* trend chart section (inside card-seasonal, below the seasonal index bars) */
 .trend-section {

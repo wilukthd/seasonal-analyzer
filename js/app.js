@@ -251,7 +251,7 @@ function showFatalError(detail) {
     renderSpikeList('spike-list', analysis.spikes, true, true);
     renderSpikeList('dip-list', analysis.dips, false, false);
     renderRawTable(record.rows);
-    initTrendSection(record.rows);
+    initTrendSection(record.rows, record.name);
   }
 
   function renderSeasonalBars(seasonal) {
@@ -272,8 +272,15 @@ function showFatalError(detail) {
     });
   }
 
-  function fmtManYen(n) {
-    if (I18N.getLang() === 'en') return fmtYen(n);
+  // Compact currency for cramped bar labels — abbreviates in both locales
+  // instead of falling back to full-precision yen (which is what was
+  // crowding/overlapping in English, where 万円 doesn't apply).
+  function fmtCompactYen(n) {
+    if (I18N.getLang() === 'en') {
+      if (Math.abs(n) >= 1000000) return '¥' + (n / 1000000).toFixed(2) + 'M';
+      if (Math.abs(n) >= 1000) return '¥' + Math.round(n / 1000) + 'K';
+      return fmtYen(n);
+    }
     if (Math.abs(n) < 10000) return fmtYen(n);
     const man = n / 10000;
     return (man >= 100 ? Math.round(man) : man.toFixed(1)) + '万円';
@@ -281,17 +288,23 @@ function showFatalError(detail) {
 
   let trendMode = 'all';
   let trendYear = null;
+  let trendProductName = null;
 
-  function initTrendSection(rows) {
-    trendMode = 'all';
-    document.querySelectorAll('.trend-controls .trend-mode-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.mode === 'all'));
+  function initTrendSection(rows, productName) {
+    const isNewProduct = productName !== trendProductName;
+    trendProductName = productName;
+
+    if (isNewProduct) {
+      trendMode = 'all';
+      document.querySelectorAll('.trend-controls .trend-mode-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.mode === 'all'));
+    }
 
     const years = Array.from(new Set(rows.map((r) => r.year))).sort((a, b) => a - b);
     const yearSelect = document.getElementById('trend-year-select');
     yearSelect.innerHTML = years.map((y) => `<option value="${y}">${t('detail.yearOption', y)}</option>`).join('');
-    trendYear = years[years.length - 1];
+    if (isNewProduct || trendYear == null || !years.includes(trendYear)) trendYear = years[years.length - 1];
     yearSelect.value = trendYear;
-    yearSelect.hidden = true;
+    yearSelect.hidden = trendMode !== 'year';
 
     renderTrendChart(rows);
   }
@@ -366,16 +379,19 @@ function showFatalError(detail) {
     const maxV = Math.max(...vals, 1);
 
     const wrap = document.createElement('div');
-    wrap.className = 'seasonal-bars';
+    wrap.className = 'trend-year-bars';
     for (let m = 1; m <= 12; m++) {
       const v = byMonth[m];
       const heightPct = v != null ? Math.max(3, (v / maxV) * 100) : 2;
       const col = document.createElement('div');
-      col.className = 'season-col';
+      col.className = 'trend-year-col';
       col.innerHTML = `
-        <span class="season-val">${v != null ? fmtManYen(v) : '—'}</span>
-        <div class="season-bar-track"><div class="season-bar trend" style="height:${heightPct}%"></div></div>
-        <span class="season-label">${monthLabel(m)}</span>
+        <div class="trend-year-track">
+          <div class="trend-year-bar" style="height:${heightPct}%">
+            <span class="trend-year-val">${v != null ? fmtCompactYen(v) : '—'}</span>
+          </div>
+        </div>
+        <span class="trend-year-label">${monthLabel(m)}</span>
       `;
       wrap.appendChild(col);
     }
