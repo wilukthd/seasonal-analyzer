@@ -192,17 +192,19 @@ function showFatalError(detail) {
   }
 
   // ---------------- analysis (shared context + cache) ----------------
-  // The shop-wide 月度 pattern and τ² come from every product series (商品売上高 and
-  // manual uploads); each series is then analysed against them. The permutation test
-  // is the slow part, so results are cached until the data changes.
+  // The shop-wide 月度 pattern and τ² come from the 商品売上高 series of products.json.
+  // Manual .xlsx uploads are only used when no bundle is loaded: they usually duplicate
+  // a 中区分 series and would be counted twice. The permutation test is the slow part,
+  // so results are cached until the data changes.
   let analysisCtx = null;
   let analysisSig = '';
   const analysisCache = new Map();
   function ensureContext(products) {
     const sig = products.length + '|' + products.reduce((m, p) => (p.lastUpdatedAt > m ? p.lastUpdatedAt : m), '');
     if (sig === analysisSig && analysisCtx) return;
-    const base = products.filter((p) => ['商品売上高', ACCT_MANUAL].includes(acctKey(p)));
-    analysisCtx = SalesStats.buildContext(base.length ? base : products);
+    const bundle = products.filter((p) => acctKey(p) === '商品売上高');
+    const manual = products.filter((p) => acctKey(p) === ACCT_MANUAL);
+    analysisCtx = SalesStats.buildContext(bundle.length ? bundle : (manual.length ? manual : products));
     analysisSig = sig;
     analysisCache.clear();
   }
