@@ -6,7 +6,7 @@
 <title>商品売上分析 | THD Sales Ledger</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261031d" />
+<link rel="stylesheet" href="css/style.css?v=20261101e" />
 </head>
 <body>
 
@@ -146,6 +146,7 @@
         <div>
           <h2 id="detail-title">—</h2>
           <p class="hint" id="detail-sub"></p>
+          <div id="detail-selection" class="selection-bar" hidden></div>
         </div>
         <div class="detail-head-actions">
           <button id="print-detail" class="print-btn" data-i18n="detail.printBtn">🖨 印刷 / PDF保存</button>
@@ -214,6 +215,19 @@
           <ol id="dip-list" class="spike-list"></ol>
         </div>
 
+        <div id="buyer-card" class="card card-buyers" hidden>
+          <div class="season-head">
+            <h3><span data-i18n="buyers.heading">購入者の内訳</span> <span class="muted" id="buyer-sub"></span></h3>
+            <div class="trend-mode-group">
+              <button type="button" class="trend-mode-btn buyer-range-btn is-active" data-range="recent" data-i18n="buyers.recent">直近36ヶ月度</button>
+              <button type="button" class="trend-mode-btn buyer-range-btn" data-range="all" data-i18n="detail.trendAll">全期間</button>
+            </div>
+          </div>
+          <div id="buyer-summary" class="buyer-summary"></div>
+          <div id="buyer-chart" class="trend-chart"></div>
+          <p class="muted-small buyer-def" data-i18n="buyers.definitions">店舗新規＝その月度に会員登録 / 商品初回＝既存会員がこのシリーズ（SKU）を初めて購入 / 継続＝前回購入から180日以内 / 復帰＝前回購入から180日超。再購入率＝その月度の購入者のうち次の6ヶ月度以内にまた買った割合（直近6ヶ月度はまだ判定できません）。</p>
+        </div>
+
         <div class="card card-raw">
           <h3 data-i18n="detail.rawHeading">月別実績</h3>
           <div class="table-wrap table-wrap-tall">
@@ -232,9 +246,11 @@
 
         <div id="sku-card" class="card card-skus" hidden>
           <h3><span data-i18n="detail.skuHeading">SKU別内訳</span> <span class="muted" id="sku-count"></span></h3>
+          <p class="muted-small sku-hint" data-i18n="sel.hint">チェックしたSKUだけでページ全体（判定・季節指数・推移・スパイク）を再計算します。「のみ」でそのSKUだけを表示。</p>
           <div class="table-wrap table-wrap-tall">
             <table id="sku-table">
               <thead><tr>
+                <th class="sku-check-cell"><input type="checkbox" id="sku-all" checked></th>
                 <th data-i18n="detail.thSkuCode">商品コード</th><th data-i18n="detail.thSkuName">商品名</th>
                 <th data-i18n="detail.thSku12">直近12ヶ月度</th><th data-i18n="detail.thSkuTotal">全期間</th>
                 <th data-i18n="detail.thSkuLast">最終月度</th>
@@ -359,10 +375,10 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="js/i18n.js?v=20261031d"></script>
-<script src="js/db.js?v=20261031d"></script>
-<script src="js/parse.js?v=20261031d"></script>
-<script src="js/stats.js?v=20261031d"></script>
-<script src="js/app.js?v=20261031d"></script>
+<script src="js/i18n.js?v=20261101e"></script>
+<script src="js/db.js?v=20261101e"></script>
+<script src="js/parse.js?v=20261101e"></script>
+<script src="js/stats.js?v=20261101e"></script>
+<script src="js/app.js?v=20261101e"></script>
 </body>
 </html>

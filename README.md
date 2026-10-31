@@ -22,6 +22,17 @@ seconds and merge by month like any upload, keeping your notes.
   中区分 master). The choice is remembered in this browser.
 - **SKU drill-down** (detail page): each top spike lists the SKUs that made it, with their
   share of that month; the SKU card lists every SKU with last-12-月度 and all-time sales.
+- **SKU filter** (detail page): tick SKUs in the SKU card (or press のみ) and the whole page —
+  verdict, seasonal index, trend, spikes, monthly table — is recalculated on just those SKUs.
+  Customer counts are only shown for the whole series or a single SKU, because one person
+  can buy several SKUs.
+- **購入者の内訳** (detail page): buyers each 月度 split into 店舗新規 / 商品初回 (first purchase
+  of this series by an existing member) / 継続 (bought within 180 days) / 復帰 (after more
+  than 180 days), with the share of newcomers who bought again within 6 月度. A summary
+  compares the last 12 月度 with the year before and flags a shrinking buyer base or
+  newcomers who stop coming back. Each top spike shows which buyer type grew against the
+  12 月度 before it and names the pattern: members reached (magazine / DM type), new shop
+  customers (acquisition), usual buyers buying more, or more spend per buyer.
 - **月度**: all months are fiscal months (21st of the previous month to the 20th).
 
 ## What it does

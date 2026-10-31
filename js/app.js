@@ -34,6 +34,10 @@ function showFatalError(detail) {
   const monthLabel = (m) => t('month.' + m);
 
   let currentProduct = null;
+  // SKU filter on the detail page: null = the whole series, else a Set of 商品コード.
+  // currentView is currentProduct, or the selected SKUs summed into series-shaped rows.
+  let skuSelection = null;
+  let currentView = null;
   let calendarSortKey = 'eta2';
   let calendarSortDir = -1;
   // Excel-style column filters: null = no filter (show all); Set = only show these values.
@@ -209,7 +213,7 @@ function showFatalError(detail) {
     analysisCache.clear();
   }
   function analysisOf(p) {
-    const key = p.name + '|' + p.lastUpdatedAt;
+    const key = p.name + '|' + p.lastUpdatedAt + (p.selection ? '|' + p.selection.codes.join(',') : '');
     if (!analysisCache.has(key)) analysisCache.set(key, SalesStats.analyze(p.rows, analysisCtx, p.name));
     return analysisCache.get(key);
   }
@@ -345,6 +349,7 @@ function showFatalError(detail) {
     const record = await SalesDB.get(name);
     if (!record) return;
     ensureContext(await SalesDB.getAll());
+    if (!currentProduct || currentProduct.name !== name) skuSelection = null;
     currentProduct = record;
     showView('detail');
     renderProductDetailContent(record);
@@ -354,10 +359,13 @@ function showFatalError(detail) {
   // openProductDetail() and by the language-change re-render, since the
   // latter must not force-switch the view if the user is on another tab.
   function renderProductDetailContent(record) {
-    const analysis = analysisOf(record);
+    const view = selectionView(record);
+    currentView = view;
+    const analysis = analysisOf(view);
 
     document.getElementById('detail-title').textContent = record.name;
-    const first = record.rows[0], last = record.rows[record.rows.length - 1];
+    renderSelectionBar(view);
+    const first = view.rows[0], last = view.rows[view.rows.length - 1];
     document.getElementById('detail-sub').textContent =
       t('detail.sub', first.ymKey, last.ymKey, record.sourceFileName)
       + (record.accounting !== undefined ? t('detail.subMeta', acctLabel(acctKey(record)), isActive(record)) : '');
@@ -369,17 +377,217 @@ function showFatalError(detail) {
     document.getElementById('detail-classification-text').textContent = clsText(cls.key);
     document.getElementById('detail-eta2').textContent = fmtOmega(analysis);
     document.getElementById('detail-fval').textContent = analysis.sufficiency.ok ? fmtP(analysis.test.p) : '—';
-    document.getElementById('detail-span').textContent = t('detail.monthsUnit', record.rows.length);
+    document.getElementById('detail-span').textContent = t('detail.monthsUnit', view.rows.length);
     renderReliability(analysis);
 
     renderSeasonalBars(analysis);
     renderYoyTable(analysis.yoy);
     renderSpikeList('spike-list', analysis.spikes, true, true);
     renderSpikeList('dip-list', analysis.dips, false, false);
-    renderRawTable(record.rows);
+    renderRawTable(view.rows);
     renderSkuTable(record);
-    initTrendSection(record.rows, record.name);
+    renderBuyers(view);
+    initTrendSection(view.rows, record.name);
   }
+
+  // Sum the selected SKUs into rows shaped like series rows. Sales, units and lines add up;
+  // customers do not (one person can buy two SKUs), so they are only kept for a single SKU.
+  function selectionView(record) {
+    const skus = record.skus || [];
+    if (!skuSelection || !skus.length) return record;
+    const chosen = skus.filter((s) => skuSelection.has(s.code));
+    if (!chosen.length || chosen.length === skus.length) return record;
+    const byKey = new Map();
+    chosen.forEach((s) => s.rows.forEach((r) => {
+      const o = byKey.get(r[0]) || { sales: 0, qty: 0, orderCount: 0 };
+      o.sales += r[1]; o.qty += r[2]; o.orderCount += r[3];
+      byKey.set(r[0], o);
+    }));
+    const single = chosen.length === 1 ? new Map(chosen[0].rows.map((r) => [r[0], r])) : null;
+    const rows = [...byKey.keys()].sort().map((k) => {
+      const [year, month] = k.split('-').map(Number);
+      const row = { ymKey: k, year, month, ...byKey.get(k),
+        orders: null, totalCustomers: null, newCustomers: null, existingCustomers: null };
+      const sr = single && single.get(k);
+      if (sr && sr.length >= 10) row.buyers = sr.slice(4, 10);
+      return row;
+    });
+    return { ...record, rows, skus: chosen,
+      selection: { codes: chosen.map((s) => s.code), total: skus.length, single: chosen.length === 1 } };
+  }
+
+  function renderSelectionBar(view) {
+    const bar = document.getElementById('detail-selection');
+    bar.hidden = !view.selection;
+    if (!view.selection) return;
+    const names = view.skus.map((s) => s.code).join(', ');
+    bar.innerHTML = `<span>${escapeHtml(t('sel.showing', view.selection.codes.length, view.selection.total, names))}</span>
+      <button type="button" class="sel-reset">${escapeHtml(t('sel.reset'))}</button>
+      <span class="muted-small">${escapeHtml(t('sel.note'))}</span>`;
+    bar.querySelector('.sel-reset').addEventListener('click', () => {
+      skuSelection = null;
+      renderProductDetailContent(currentProduct);
+    });
+  }
+
+  // ---------------- buyer types (products.json with series_buyers / sku_buyers) ----------------
+  // row.buyers = [店舗新規, 商品初回, 継続, 復帰, 再購入, 新顔再購入]; 再購入 is null for
+  // the last 6 月度. 新顔 = 店舗新規 + 商品初回 + 復帰 (everyone who is not a 継続 buyer).
+  const BUYER_KEYS = ['shopNew', 'productNew', 'regular', 'returning'];
+  const sumB = (b) => b[0] + b[1] + b[2] + b[3];
+  const newcB = (b) => b[0] + b[1] + b[3];
+  function median(a) {
+    if (!a.length) return 0;
+    const s = [...a].sort((x, y) => x - y), h = s.length >> 1;
+    return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2;
+  }
+  function repeatRates(rows) {
+    const m = rows.filter((r) => r.buyers[4] != null);
+    const all = m.reduce((s, r) => s + sumB(r.buyers), 0), rep = m.reduce((s, r) => s + r.buyers[4], 0);
+    const nc = m.reduce((s, r) => s + newcB(r.buyers), 0), nr = m.reduce((s, r) => s + r.buyers[5], 0);
+    return { all: all ? rep / all : null, newc: nc >= 5 ? nr / nc : null, from: m.length ? m[0].ymKey : null, to: m.length ? m[m.length - 1].ymKey : null };
+  }
+
+  // What changed in a spike month, against the median month of the 12 月度 before it.
+  function buyerDriver(rows, row) {
+    if (!row.buyers) return null;
+    const prev = rows.filter((r) => r.buyers && r.ymKey >= shiftYm(row.ymKey, -12) && r.ymKey < row.ymKey);
+    if (prev.length < 3) return null;
+    const base = [0, 1, 2, 3].map((i) => median(prev.map((r) => r.buyers[i])));
+    const b = row.buyers, d = b.slice(0, 4).map((v, i) => v - base[i]);
+    const reach = d[1] + d[3];
+    // 'bigger' when buyer growth explains less than half of the sales growth
+    const salesBase = median(prev.map((r) => r.sales));
+    const buyerBase = base.reduce((s, v) => s + v, 0);
+    const salesUp = salesBase > 0 ? row.sales / salesBase - 1 : 0;
+    const buyersUp = buyerBase > 0 ? sumB(b) / buyerBase - 1 : 0;
+    let key;
+    if (buyersUp < 0.5 * salesUp || sumB(b) <= buyerBase + 2) key = 'bigger';
+    else if (reach >= d[0] && reach >= d[2]) key = 'reach';
+    else if (d[0] >= d[2]) key = 'acquire';
+    else key = 'regular';
+    const nc = newcB(b);
+    return { key, b, base, newRate: b[5] != null && nc >= 3 ? b[5] / nc : null, baseRate: repeatRates(prev).newc };
+  }
+
+  function buyerDriverEl(d) {
+    const p = document.createElement('p');
+    p.className = 'spike-buyers';
+    const parts = BUYER_KEYS.map((k, i) => t('buyers.vsUsual', t('buyers.' + k), d.b[i], Math.round(d.base[i])));
+    let text = t('buyers.label') + ' ' + parts.join(' · ');
+    text += '\n' + t('buyers.pattern') + ' ' + t('buyers.pattern.' + d.key);
+    if (d.newRate != null) {
+      text += '\n' + t('buyers.spikeRepeat', fmtPct(d.newRate, 0), d.baseRate != null ? fmtPct(d.baseRate, 0) : '—');
+    }
+    p.textContent = text;
+    return p;
+  }
+
+  let buyerRange = 'recent';
+  function renderBuyers(view) {
+    const card = document.getElementById('buyer-card');
+    const rows = view.rows.filter((r) => Array.isArray(r.buyers));
+    const seriesHas = (currentProduct.rows || []).some((r) => Array.isArray(r.buyers));
+    card.hidden = !seriesHas;
+    if (!seriesHas) return;
+    const summary = document.getElementById('buyer-summary');
+    const chart = document.getElementById('buyer-chart');
+    document.getElementById('buyer-sub').textContent = view.selection
+      ? (view.selection.single ? t('buyers.subSku', view.selection.codes[0]) : '')
+      : t('buyers.subSeries');
+    if (view.selection && !view.selection.single) {
+      summary.innerHTML = `<p class="is-weak">${escapeHtml(t('buyers.multiSku'))}</p>`;
+      chart.innerHTML = '';
+      return;
+    }
+    if (!rows.length) {
+      summary.innerHTML = `<p class="is-weak">${escapeHtml(t('buyers.none'))}</p>`;
+      chart.innerHTML = '';
+      return;
+    }
+    summary.innerHTML = buyerSummary(rows).map((x) => `<p class="${x.warn ? 'buyer-warn' : ''}">${escapeHtml(x.text)}</p>`).join('');
+    renderBuyerChart(chart, buyerRange === 'all' ? rows : rows.filter((r) => r.ymKey >= shiftYm(rows[rows.length - 1].ymKey, -35)));
+  }
+
+  function buyerSummary(rows) {
+    const last = rows[rows.length - 1].ymKey;
+    const win = (a, b) => rows.filter((r) => r.ymKey > shiftYm(last, a) && r.ymKey <= shiftYm(last, b));
+    const tot = (rs) => [0, 1, 2, 3].map((i) => rs.reduce((s, r) => s + r.buyers[i], 0));
+    const cur = tot(win(-12, 0)), prev = tot(win(-24, -12));
+    const n = cur.reduce((s, v) => s + v, 0), pn = prev.reduce((s, v) => s + v, 0);
+    const nc = cur[0] + cur[1] + cur[3], pnc = prev[0] + prev[1] + prev[3];
+    const out = [{ text: t('buyers.sum12', fmtInt(n), pn ? fmtInt(pn) : '—', pn ? fmtSignedPct(n / pn - 1, 0) : '—',
+      n ? fmtPct(cur[2] / n, 0) : '—', fmtInt(nc), fmtInt(cur[0]), fmtInt(cur[1]), fmtInt(cur[3])) }];
+    const mature = rows.filter((r) => r.buyers[4] != null);
+    if (mature.length) {
+      const ml = mature[mature.length - 1].ymKey;
+      const rc = repeatRates(mature.filter((r) => r.ymKey > shiftYm(ml, -12)));
+      const rp = repeatRates(mature.filter((r) => r.ymKey > shiftYm(ml, -24) && r.ymKey <= shiftYm(ml, -12)));
+      const f = (v) => (v == null ? '—' : fmtPct(v, 0));
+      out.push({ text: t('buyers.repeat', rc.from, rc.to, f(rc.all), f(rc.newc), f(rp.all), f(rp.newc)) });
+      if (rc.newc != null && rp.newc != null && rc.newc < rp.newc - 0.1) out.push({ warn: true, text: t('buyers.warnStick') });
+    }
+    if (pn && n < pn * 0.85 && n && nc / n < 0.15) out.push({ warn: true, text: t('buyers.warnShrinking') });
+    if (pnc >= 10 && nc >= pnc * 1.5) out.push({ text: t('buyers.noteInflow', (nc / pnc).toFixed(1)) });
+    return out;
+  }
+
+  function renderBuyerChart(container, rows) {
+    const W = 1000, H = 210, padTop = 14, padBottom = 24, padL = 34, padR = 40;
+    const usableW = W - padL - padR, usableH = H - padTop - padBottom;
+    const maxV = Math.max(...rows.map((r) => sumB(r.buyers)), 1);
+    const slot = usableW / rows.length, bw = Math.max(1, slot * 0.72);
+    const y = (v) => padTop + usableH - (v / maxV) * usableH;
+    const colors = BUYER_KEYS.map((k) => `var(--b-${k})`);
+    const order = [2, 3, 1, 0];   // stack 継続 at the bottom
+    const bars = rows.map((r, i) => {
+      const x = padL + i * slot + (slot - bw) / 2;
+      let acc = 0;
+      const rects = order.map((k) => {
+        const v = r.buyers[k];
+        if (!v) return '';
+        const y0 = y(acc + v), h = y(acc) - y0;
+        acc += v;
+        return `<rect x="${x.toFixed(1)}" y="${y0.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${colors[k]}"></rect>`;
+      }).join('');
+      const nc = newcB(r.buyers);
+      const tip = `${r.ymKey}  ` + BUYER_KEYS.map((k, j) => `${t('buyers.' + k)} ${r.buyers[j]}`).join(' / ')
+        + (r.buyers[5] != null && nc ? `  ${t('buyers.tipRepeat')} ${fmtPct(r.buyers[5] / nc, 0)}` : '');
+      return `<g><title>${escapeHtml(tip)}</title>${rects}<rect x="${(padL + i * slot).toFixed(1)}" y="${padTop}" width="${slot.toFixed(1)}" height="${usableH}" fill="transparent"></rect></g>`;
+    }).join('');
+    // 新顔の再購入率 on the right axis (0–100%), only where enough newcomers to mean something
+    const ry = (v) => padTop + usableH - v * usableH;
+    const pts = rows.map((r, i) => {
+      const nc = newcB(r.buyers);
+      return r.buyers[5] != null && nc >= 5 ? [padL + i * slot + slot / 2, ry(r.buyers[5] / nc)] : null;
+    });
+    const segs = [];
+    let seg = [];
+    pts.forEach((pt) => { if (pt) seg.push(pt); else if (seg.length) { segs.push(seg); seg = []; } });
+    if (seg.length) segs.push(seg);
+    const lines = segs.map((sg) => (sg.length > 1
+      ? `<polyline points="${sg.map(([a, b]) => `${a.toFixed(1)},${b.toFixed(1)}`).join(' ')}" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-dasharray="4 3"></polyline>`
+      : `<circle cx="${sg[0][0].toFixed(1)}" cy="${sg[0][1].toFixed(1)}" r="2.2" fill="var(--ink)"></circle>`)).join('');
+    const xLabels = rows.map((r, i) => ((r.month === 1 || i === 0)
+      ? `<text x="${(padL + i * slot + slot / 2).toFixed(1)}" y="${H - 7}" font-size="11" fill="var(--ink-soft)" text-anchor="middle">${r.year}</text>` : '')).join('');
+    const axis = `<text x="${padL - 6}" y="${padTop + 9}" font-size="10.5" fill="var(--ink-soft)" text-anchor="end">${fmtInt(maxV)}</text>
+      <text x="${padL - 6}" y="${padTop + usableH}" font-size="10.5" fill="var(--ink-soft)" text-anchor="end">0</text>
+      <text x="${W - padR + 6}" y="${padTop + 9}" font-size="10.5" fill="var(--ink-soft)">100%</text>
+      <text x="${W - padR + 6}" y="${padTop + usableH}" font-size="10.5" fill="var(--ink-soft)">0%</text>`;
+    const legend = order.map((k) => `<span><i style="background:${colors[k]}"></i>${escapeHtml(t('buyers.' + BUYER_KEYS[k]))}</span>`).join('')
+      + `<span><i class="legend-line"></i>${escapeHtml(t('buyers.legendRepeat'))}</span>`;
+    container.innerHTML = `
+      <svg viewBox="0 0 ${W} ${H}" class="trend-svg" preserveAspectRatio="xMidYMid meet">${bars}${lines}${xLabels}${axis}</svg>
+      <div class="buyer-legend">${legend}</div>`;
+  }
+
+  document.querySelectorAll('.buyer-range-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      buyerRange = btn.dataset.range;
+      document.querySelectorAll('.buyer-range-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
+      if (currentView) renderBuyers(currentView);
+    });
+  });
 
   // SKUs inside a series (products.json only). Each SKU row: [ymKey, sales, qty, lines].
   function skuSalesAt(sku, ymKey) {
@@ -413,14 +621,34 @@ function showFatalError(detail) {
       last: s.rows.reduce((m, r) => (r[0] > m ? r[0] : m), ''),
     })).sort((a, b) => (b.sales12 - a.sales12) || (b.total - a.total));
     document.getElementById('sku-count').textContent = t('detail.skuCount', rows.length, rows.filter((r) => r.active).length);
-    document.querySelector('#sku-table tbody').innerHTML = rows.map((r) => `
-      <tr>
-        <td class="mono-cell">${escapeHtml(r.code)}</td>
+    const isOn = (code) => !skuSelection || skuSelection.has(code);
+    const allBox = document.getElementById('sku-all');
+    allBox.checked = !skuSelection;
+    allBox.onchange = () => {
+      skuSelection = null;
+      renderProductDetailContent(currentProduct);
+    };
+    const tbody = document.querySelector('#sku-table tbody');
+    tbody.innerHTML = rows.map((r) => `
+      <tr class="${isOn(r.code) ? '' : 'is-off'}">
+        <td class="sku-check-cell"><input type="checkbox" data-code="${escapeHtml(r.code)}" ${isOn(r.code) ? 'checked' : ''}></td>
+        <td class="mono-cell">${escapeHtml(r.code)} <button type="button" class="sku-only" data-code="${escapeHtml(r.code)}">${escapeHtml(t('sel.only'))}</button></td>
         <td>${escapeHtml(r.name)}${r.active ? '' : ` <span class="class-tag ended-tag">${escapeHtml(t('products.endedTag'))}</span>`}</td>
         <td class="pct-cell">${r.sales12 ? fmtYen(r.sales12) : '—'}</td>
         <td class="pct-cell">${fmtYen(r.total)}</td>
         <td class="pct-cell">${r.last}</td>
       </tr>`).join('');
+    tbody.querySelectorAll('input[data-code]').forEach((cb) => cb.addEventListener('change', () => {
+      const sel = new Set(skuSelection || skus.map((s) => s.code));
+      if (cb.checked) sel.add(cb.dataset.code); else sel.delete(cb.dataset.code);
+      if (!sel.size) { cb.checked = true; return; }
+      skuSelection = sel.size === skus.length ? null : sel;
+      renderProductDetailContent(currentProduct);
+    }));
+    tbody.querySelectorAll('.sku-only').forEach((btn) => btn.addEventListener('click', () => {
+      skuSelection = skus.length > 1 ? new Set([btn.dataset.code]) : null;
+      renderProductDetailContent(currentProduct);
+    }));
   }
 
   // データの信頼性: how much data the verdict rests on, and why it came out as it did.
@@ -537,13 +765,13 @@ function showFatalError(detail) {
       trendMode = btn.dataset.mode;
       document.querySelectorAll('.trend-controls .trend-mode-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
       document.getElementById('trend-year-select').hidden = trendMode !== 'year';
-      if (currentProduct) renderTrendChart(currentProduct.rows);
+      if (currentView) renderTrendChart(currentView.rows);
     });
   });
 
   document.getElementById('trend-year-select').addEventListener('change', (e) => {
     trendYear = Number(e.target.value);
-    if (currentProduct) renderTrendChart(currentProduct.rows);
+    if (currentView) renderTrendChart(currentView.rows);
   });
 
   function renderTrendChart(rows) {
@@ -638,23 +866,27 @@ function showFatalError(detail) {
   function renderSpikeList(elId, items, withFactor, withNotes) {
     const list = document.getElementById(elId);
     list.innerHTML = '';
+    const viewRows = currentView ? currentView.rows : [];
     items.forEach((r) => {
       const li = document.createElement('li');
       li.className = 'spike-item';
+      const driver = withFactor ? buyerDriver(viewRows, r) : null;
 
       const main = document.createElement('div');
       main.className = 'spike-item-main';
       main.innerHTML = `
         <div>
           <div class="ym">${r.ymKey}</div>
-          ${withFactor ? `<div class="factor">${escapeHtml(factorLabel(r.factorKey))}</div>` : ''}
+          ${withFactor && !driver ? `<div class="factor">${escapeHtml(factorLabel(r.factorKey))}</div>` : ''}
         </div>
         <div class="ratio ${r.ratio >= 1 ? 'up' : 'down'}">${fmtPct(r.ratio, 0)}</div>
       `;
       li.appendChild(main);
 
-      if (withFactor && currentProduct && currentProduct.skus && currentProduct.skus.length) {
-        const drivers = topSkusFor(currentProduct, r.ymKey, 3);
+      if (driver) li.appendChild(buyerDriverEl(driver));
+
+      if (withFactor && currentView && currentView.skus && currentView.skus.length > 1) {
+        const drivers = topSkusFor(currentView, r.ymKey, 3);
         if (drivers.length) {
           const p = document.createElement('p');
           p.className = 'spike-skus';
@@ -750,8 +982,8 @@ function showFatalError(detail) {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${r.ymKey}</td><td>${fmtYen(r.sales)}</td><td>${fmtInt(r.qty)}</td>
-        <td>${fmtInt(r.orderCount)}</td><td>${r.orders != null ? fmtInt(r.orders) : '—'}</td><td>${fmtInt(r.totalCustomers)}</td>
-        <td>${fmtInt(r.newCustomers)}</td><td>${fmtInt(r.existingCustomers)}</td>
+        <td>${fmtInt(r.orderCount)}</td><td>${r.orders != null ? fmtInt(r.orders) : '—'}</td><td>${r.totalCustomers != null ? fmtInt(r.totalCustomers) : '—'}</td>
+        <td>${r.newCustomers != null ? fmtInt(r.newCustomers) : '—'}</td><td>${r.existingCustomers != null ? fmtInt(r.existingCustomers) : '—'}</td>
       `;
       tbody.appendChild(tr);
     });
