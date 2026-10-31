@@ -13,6 +13,16 @@
   --mixed: #6B5B73;      /* 混合型 */
   --mixed-bg: #EAE5EC;
 
+  /* 判定 (stats.js classification keys) */
+  --seasonal-spiky: #6B5B73;      /* 季節性＋スパイク */
+  --seasonal-spiky-bg: #EAE5EC;
+  --spiky: #A8791C;               /* スパイク主導 */
+  --spiky-bg: #F3EBD9;
+  --stable: #3E5F78;              /* 季節性なし（安定） */
+  --stable-bg: #E2EAF0;
+  --insufficient: #6E7A80;        /* データ不足 */
+  --insufficient-bg: #ECEFEE;
+
   --danger: #9B3B32;
 
   --font-display: 'Zen Kaku Gothic New', 'Noto Sans JP', sans-serif;
@@ -341,6 +351,35 @@ html, body {
 }
 
 .class-tag.stale-tag { background: #FBEDEB; color: var(--danger); margin-left: 6px; }
+.class-tag.ended-tag { background: var(--line-soft); color: var(--ink-soft); margin-left: 6px; }
+
+/* 会計区分 / ended-series scope, shared by products list and calendar */
+.scope-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+  font-size: 12px;
+}
+.scope-bar:empty { display: none; }
+.scope-label { color: var(--ink-soft); font-weight: 700; margin-right: 4px; }
+.scope-chip, .scope-ended {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface);
+  cursor: pointer;
+  user-select: none;
+}
+.scope-chip input { display: none; }
+.scope-chip.is-on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.scope-chip .scope-n { font-family: var(--font-mono); font-size: 11px; opacity: 0.75; }
+.scope-ended { border-style: dashed; margin-left: 6px; }
+.scope-ended input { margin: 0; }
 
 .empty-state {
   border: 1px dashed var(--line);
@@ -410,6 +449,9 @@ html, body {
 .card-spikes { grid-column: 1 / 2; }
 .card-dips { grid-column: 2 / 3; }
 .card-raw { grid-column: 1 / 3; }
+.card-skus { grid-column: 1 / 3; }
+.card-skus[hidden] { display: none; }
+.mono-cell { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; }
 
 .class-badge {
   font-family: var(--font-display);
@@ -449,7 +491,37 @@ html, body {
   display: flex;
   align-items: flex-end;
   width: 100%;
+  position: relative;
 }
+
+/* 90% range of the 月度 index, drawn over the bar */
+.season-band {
+  position: absolute;
+  left: 50%;
+  width: 3px;
+  margin-left: -1.5px;
+  background: var(--ink);
+  opacity: 0.45;
+  border-radius: 2px;
+}
+.season-col.is-empty .season-bar { opacity: 0.35; }
+
+.season-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.season-head h3 { margin-bottom: 6px; }
+.seasonal-note { font-size: 11.5px; color: var(--ink-soft); line-height: 1.5; margin: 0 0 8px; }
+.seasonal-note.is-weak { color: var(--campaign); font-weight: 700; }
+
+/* データの信頼性 box in the 判定 card */
+.reliability { margin-top: 16px; padding-top: 12px; border-top: 2px solid var(--line-soft); }
+.reliability h4 { font-family: var(--font-display); font-size: 12.5px; margin: 0 0 8px; }
+.reliability .stat-row dd { margin: 0; font-family: var(--font-mono); font-size: 12px; text-align: right; }
+.rel-reason { font-size: 12px; line-height: 1.6; margin: 10px 0 0; color: var(--ink); }
+.reliability.is-weak .rel-reason { color: var(--campaign); font-weight: 700; }
+.muted-small { font-size: 10.5px; color: var(--ink-soft); font-weight: 400; }
+
+.calendar-tools { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+.calendar-tools .filter-count { margin: 0; }
+.calendar-wrap tr.is-tentative td { color: var(--ink-soft); background: repeating-linear-gradient(135deg, transparent 0 6px, var(--line-soft) 6px 7px); }
 
 .season-bar {
   width: 100%;
@@ -646,6 +718,7 @@ tr:hover td { background: var(--paper); }
 .spike-item .ym { font-family: var(--font-mono); font-weight: 700; font-size: 12.5px; }
 .spike-item .factor { font-size: 11.5px; color: var(--ink-soft); }
 .spike-item .ratio { font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; }
+.spike-skus { margin: 0; font-size: 11.5px; color: var(--ink-soft); line-height: 1.5; }
 
 /* per-spike notes */
 .spike-note-toggle {
@@ -868,7 +941,7 @@ tr:hover td { background: var(--paper); }
 
 @media (max-width: 760px) {
   .detail-grid { grid-template-columns: 1fr; }
-  .card-classification, .card-seasonal, .card-yoy, .card-spikes, .card-dips, .card-raw {
+  .card-classification, .card-seasonal, .card-yoy, .card-spikes, .card-dips, .card-raw, .card-skus {
     grid-column: 1 / -1;
   }
   .topbar { flex-direction: column; align-items: flex-start; }

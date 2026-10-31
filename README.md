@@ -7,6 +7,23 @@ by hand — automatically, for every product, in one comparison calendar.
 Available in Japanese and English — toggle in the top-right corner. The choice is
 remembered (via `localStorage`) for your next visit.
 
+## Loading all products (products.json)
+
+The main input is `products.json`, built monthly by `seasonal\run.ps1` in the kago-analysis
+repo: every 中区分 series × 月度 with sales, quantity, lines (購入件数), orders (注文件数),
+customers, plus each series' SKUs. Drop it on the Upload tab; all series load in a couple of
+seconds and merge by month like any upload, keeping your notes.
+
+- **Never put products.json (or any .xlsx / .csv) in this folder.** This repo goes to GitHub
+  Pages, which is public. `.gitignore` blocks those types as a safety net. Load the file from
+  the share or from `kago-analysis\seasonal\out\`.
+- **Scope bar** (商品一覧 and 季節カレンダー): 会計区分 chips — 商品売上高 and manual
+  `.xlsx` uploads are on by default — and a toggle for ended series (no SKU in the current
+  中区分 master). The choice is remembered in this browser.
+- **SKU drill-down** (detail page): each top spike lists the SKUs that made it, with their
+  share of that month; the SKU card lists every SKU with last-12-月度 and all-time sales.
+- **月度**: all months are fiscal months (21st of the previous month to the 20th).
+
 ## What it does
 
 - **Upload** — drag & drop `.xlsx` files. It looks for a sheet whose header row contains
@@ -122,20 +139,36 @@ sales-analyzer/
     ├── i18n.js    # ja/en translation dictionary + language switching
     ├── db.js      # IndexedDB wrapper
     ├── parse.js   # xlsx → structured rows (SheetJS)
-    ├── stats.js   # seasonal index / eta^2 / spike diagnostics (language-agnostic)
+    ├── stats.js   # seasonality model, permutation test, shrinkage, spikes (language-agnostic)
     └── app.js     # view routing + rendering
 ```
 
 ## Notes on the analysis method
 
-`stats.js` mirrors the methodology already in your workbook's `季節性_トレンド分析` sheet:
+Adopted 2026-10-31, replacing the VBA macro's ratio-to-year-average + η² method, which
+labelled 83–95% of series shorter than four years "季節性主導型" from noise alone.
+Settings live in `SalesStats.CONFIG` (`js/stats.js`).
 
-- Each month's `ratio = sales / that year's average sales`.
-- **Seasonal index** = mean ratio for that calendar month across all years.
-- **η²** = between-month sum of squares / total sum of squares from a one-way ANOVA of
-  ratio grouped by calendar month (F-stat included).
-- **Classification thresholds**: η² < 10% → campaign-driven, 10–25% → mixed, ≥ 25% →
-  seasonal-driven — matching the guide text in your sheet.
-- **Spike factor diagnosis** is a simplified heuristic (average order value vs. baseline,
-  customer-count ratio, new-customer share) — treat it as a starting hypothesis, not a
-  final answer, same as in your original notes.
+- **Model.** `log(sales) = 年の効果 + 月度の効果 + 誤差`, fitted per series on months with
+  sales > 0. Year effects absorb level and trend, so partial years and growth don't distort
+  the month pattern. Months with sales ≤ 0 are left out (counted on the detail page).
+- **Test.** F for the 月度 effect after year effects; p from a within-year permutation test
+  (月度 labels shuffled inside each year, 199 times, seeded per series so it is stable).
+  Seasonal if p < 0.05. Strength = **ω²**, a bias-corrected η² (0 for pure noise).
+- **データ不足.** No verdict, ω² or p unless ≥ 24 months with sales and every 月度 seen at
+  least twice. Those series are tagged データ不足 / 参考 everywhere.
+- **Short series borrow strength.** Each 月度 effect is shrunk toward the shop-wide pattern
+  (all 商品売上高 + manual series combined): `w = τ² / (τ² + se²)`, τ² estimated from series
+  with ≥ 60 months. The detail page shows the own-data weight and a 90% band per 月度.
+- **店舗全体比.** Index ÷ shop-wide index: whether a product peaks more than the shop already
+  does (the shop runs about ×1.7 in 11月度 and ×2.1 in 12月度).
+- **Spikes.** Ranked by robust z (median / MAD) of the model residual, i.e. how far a month
+  is from what was expected for that year and 月度; % shown = vs. expected. "Spiky" = at
+  least 0.5 spikes (z > 3.5) per year.
+- **判定.** 季節性あり / 季節性＋スパイク / スパイク主導 / 季節性なし（安定） / データ不足.
+- **Year-on-year** compares only the 月度 present in both years; partial years are labelled.
+- **Spike factor diagnosis** (客単価上昇 / 既存顧客の再購買 / 新規顧客の増加) is unchanged: a
+  heuristic starting point, not a final answer.
+
+Full rationale and the evaluation on 236 series: `docs/seasonal-stats-proposal.md` in the
+kago-analysis repo.

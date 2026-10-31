@@ -1,7 +1,9 @@
 // db.js — thin IndexedDB wrapper. One object store, keyed by product name.
 // Each record: { name, firstUploadedAt, lastUpdatedAt, sourceFileName,
 //   rows: [{ymKey, year, month, sales, qty, orderCount, totalCustomers, newCustomers, existingCustomers}],
-//   notes: { [ymKey]: string } }  // free-text notes on specific months, e.g. spike explanations
+//   notes: { [ymKey]: string },    // free-text notes on specific months, e.g. spike explanations
+//   // only for series loaded from products.json:
+//   accounting, salesType, active, skus: [{code, name, active, rows: [[ymKey, sales, qty, lines]]}] }
 
 const SalesDB = (() => {
   const DB_NAME = 'sales-ledger';
@@ -64,6 +66,18 @@ const SalesDB = (() => {
   // Upsert by year-month: re-uploading a product (whether the export is the
   // full history again or just recent months) merges cleanly instead of
   // wholesale replacing. Returns a summary of what changed.
+  // Series metadata from products.json. Absent on .xlsx uploads, so an xlsx
+  // re-upload keeps whatever a bundle set earlier.
+  const META_KEYS = ['accounting', 'salesType', 'active', 'skus'];
+  function pickMeta(incoming, existing) {
+    const meta = {};
+    META_KEYS.forEach((k) => {
+      if (incoming[k] !== undefined) meta[k] = incoming[k];
+      else if (existing && existing[k] !== undefined) meta[k] = existing[k];
+    });
+    return meta;
+  }
+
   async function mergeAndPut(incoming) {
     const existing = await get(incoming.name);
     const now = new Date().toISOString();
@@ -76,6 +90,7 @@ const SalesDB = (() => {
         sourceFileName: incoming.sourceFileName,
         rows: incoming.rows,
         notes: {},
+        ...pickMeta(incoming, null),
       };
       await put(record);
       return { record, isNew: true, added: incoming.rows.length, updated: 0, unchanged: 0 };
@@ -101,6 +116,7 @@ const SalesDB = (() => {
       sourceFileName: incoming.sourceFileName,
       rows: mergedRows,
       notes: existing.notes || {},
+      ...pickMeta(incoming, existing),
     };
     await put(record);
     return { record, isNew: false, added, updated, unchanged };

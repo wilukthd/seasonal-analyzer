@@ -1,4 +1,5 @@
-// parse.js — turns an uploaded .xlsx File into { name, rows } using SheetJS.
+// parse.js — turns an uploaded .xlsx File into { name, rows } using SheetJS,
+// or a products.json bundle into many series at once (parseBundle).
 // Looks for a sheet whose header row contains the expected column labels
 // (月別推移 / 売上金額 / 購入個数 / 購入件数 / 総顧客数 / 新規顧客数 / 既存顧客数).
 // The sheet's own name is used as the product name (falls back to the file name).
@@ -81,5 +82,32 @@ const SalesParser = (() => {
     return { name: productName, rows };
   }
 
-  return { parseWorkbook, parseYearMonth };
+  // products.json from the kago-analysis seasonal pipeline: every 中区分 series at once.
+  // Rows already use this app's field names; year/month are 月度 (21st–20th).
+  async function parseBundle(file) {
+    let doc;
+    try {
+      doc = JSON.parse(await file.text());
+    } catch (e) {
+      throw new Error('JSONとして読み取れませんでした: ' + e.message);
+    }
+    if (!doc || !Array.isArray(doc.series)) {
+      throw new Error('products.json の形式ではありません（series がありません）。');
+    }
+    const series = doc.series
+      .filter((s) => s && s.name && Array.isArray(s.rows) && s.rows.length)
+      .map((s) => ({
+        name: s.name,
+        accounting: s.accounting || '',
+        salesType: s.salesType || '',
+        active: s.active !== false,
+        skus: Array.isArray(s.skus) ? s.skus : [],
+        rows: s.rows
+          .map((r) => ({ ...r }))
+          .sort((a, b) => (a.year - b.year) || (a.month - b.month)),
+      }));
+    return { dataThrough: doc.dataThrough || '', generatedAt: doc.generatedAt || '', series };
+  }
+
+  return { parseWorkbook, parseBundle, parseYearMonth };
 })();
