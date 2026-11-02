@@ -40,6 +40,21 @@ seconds and merge by month like any upload, keeping your notes.
   season map grouped by peak 月度. On the detail page the verdict becomes meters, the year
   table a bar chart, spikes a numbered timeline with buyer bullet bars, the buyer summary a mix
   bar and repurchase dumbbells, and the monthly table a year × 月度 heatmap.
+- **期間** (top bar, remembered per browser): 全期間 / 直近5年 / 直近3年. The verdict,
+  seasonal index, spikes and year table are computed on that window only (it ends at the latest
+  月度 loaded), so a pattern that changed over the years shows as it is now. The shop-wide
+  pattern for 店舗全体比 is recomputed on the same years; the shrinkage strength τ² keeps its
+  lifetime estimate. Series with no sales in the window drop off the list and calendar. Shorter
+  windows are not offered: the model needs every 月度 seen at least twice, and 3 years already
+  leaves about a third of products at データ不足. The trend, monthly table and buyers still show
+  full history.
+- **勢い** tab: sales in the last 3 / 6 / 12 月度 against what the product's usual path predicts.
+  予測 = (Σ sales ÷ Σ seasonal index over the 12 月度 before the window) × Σ seasonal index over
+  the window; 勢い = actual ÷ 予測, shown with 前年同期比 (same 月度 a year earlier). The seasonal
+  index follows the 期間 switch. A minimum base-period sales filter (default ¥1M) keeps tiny
+  series out; products launched during the base period are tagged 新 and left out of the
+  visual ranking, because their 予測 runs low. Visual mode shows the top 20 above and below
+  expected with a small actual-vs-expected chart each.
 - **月度**: all months are fiscal months (21st of the previous month to the 20th).
 
 ## What it does

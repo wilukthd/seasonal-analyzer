@@ -57,6 +57,7 @@ function showFatalError(detail) {
       if (btn.dataset.view === 'products') renderProductsList();
       if (btn.dataset.view === 'calendar') renderCalendar();
       if (btn.dataset.view === 'notes') renderNotesView();
+      if (btn.dataset.view === 'momentum') renderMomentum();
     });
   });
 
@@ -202,19 +203,52 @@ function showFatalError(detail) {
   // so results are cached until the data changes.
   let analysisCtx = null;
   let analysisSig = '';
+  let ctxRecords = [];
+  let latestAll = '';
   const analysisCache = new Map();
+  const periodCtxCache = new Map();
   function ensureContext(products) {
     const sig = products.length + '|' + products.reduce((m, p) => (p.lastUpdatedAt > m ? p.lastUpdatedAt : m), '');
     if (sig === analysisSig && analysisCtx) return;
     const bundle = products.filter((p) => acctKey(p) === '商品売上高');
     const manual = products.filter((p) => acctKey(p) === ACCT_MANUAL);
-    analysisCtx = SalesStats.buildContext(bundle.length ? bundle : (manual.length ? manual : products));
+    ctxRecords = bundle.length ? bundle : (manual.length ? manual : products);
+    analysisCtx = SalesStats.buildContext(ctxRecords);
+    latestAll = latestYm(products);
     analysisSig = sig;
     analysisCache.clear();
+    periodCtxCache.clear();
   }
+
+  // 期間: the verdict, seasonal index and spikes can be computed on the last 5 or 3 years only.
+  // Windows end at the latest 月度 loaded, so every series uses the same years. Shorter windows
+  // are not offered: the model needs every 月度 seen at least twice.
+  const PERIOD_KEY = 'thd-sales-ledger-period';
+  const PERIODS = [0, 5, 3];   // years; 0 = 全期間
+  let period = (() => {
+    try { const v = Number(localStorage.getItem(PERIOD_KEY)); return PERIODS.includes(v) ? v : 0; } catch (e) { return 0; }
+  })();
+  const periodFrom = () => (period ? shiftYm(latestAll, -(12 * period - 1)) : '');
+  const windowRows = (rows) => (period ? rows.filter((r) => r.ymKey >= periodFrom()) : rows);
+  // A series with no sales in the window has dropped out of it: leave it off the list and calendar.
+  const inPeriod = (p) => !period || p.rows.some((r) => r.ymKey >= periodFrom() && r.sales > 0);
+  // The shop-wide pattern is recomputed on the same years; τ² keeps its lifetime estimate,
+  // because it needs series of 60+ months to measure.
+  function periodCtx() {
+    if (!period) return analysisCtx;
+    if (!periodCtxCache.has(period)) {
+      const recs = ctxRecords.map((r) => ({ ...r, rows: windowRows(r.rows) })).filter((r) => r.rows.length);
+      periodCtxCache.set(period, { ...SalesStats.buildContext(recs), tau2: analysisCtx.tau2 });
+    }
+    return periodCtxCache.get(period);
+  }
+  function periodNote() {
+    return period ? t('period.note', period, periodFrom(), latestAll) : '';
+  }
+
   function analysisOf(p) {
-    const key = p.name + '|' + p.lastUpdatedAt + (p.selection ? '|' + p.selection.codes.join(',') : '');
-    if (!analysisCache.has(key)) analysisCache.set(key, SalesStats.analyze(p.rows, analysisCtx, p.name));
+    const key = p.name + '|' + p.lastUpdatedAt + '|' + period + (p.selection ? '|' + p.selection.codes.join(',') : '');
+    if (!analysisCache.has(key)) analysisCache.set(key, SalesStats.analyze(windowRows(p.rows), periodCtx(), p.name));
     return analysisCache.get(key);
   }
   // ω² and p are only shown when the series has enough data for a verdict; on short
@@ -269,7 +303,7 @@ function showFatalError(detail) {
     ensureContext(products);
 
     const from12 = shiftYm(latestYm(products), -11);
-    const scoped = products.filter(inScope);
+    const scoped = products.filter(inScope).filter(inPeriod);
     const computed = scoped.map((p) => {
       const analysis = analysisOf(p);
       const first = p.rows[0], last = p.rows[p.rows.length - 1];
@@ -311,7 +345,7 @@ function showFatalError(detail) {
       return productsSortDir * (av - bv);
     });
 
-    countEl.textContent = t('products.count', filtered.length, products.length);
+    countEl.textContent = t('products.count', filtered.length, products.length) + periodNote();
     noResults.hidden = filtered.length > 0;
 
     filtered.forEach((p) => {
@@ -373,7 +407,8 @@ function showFatalError(detail) {
     const first = view.rows[0], last = view.rows[view.rows.length - 1];
     document.getElementById('detail-sub').textContent =
       t('detail.sub', first.ymKey, last.ymKey, record.sourceFileName)
-      + (record.accounting !== undefined ? t('detail.subMeta', acctLabel(acctKey(record)), isActive(record)) : '');
+      + (record.accounting !== undefined ? t('detail.subMeta', acctLabel(acctKey(record)), isActive(record)) : '')
+      + periodNote();
 
     const cls = analysis.classification;
     const badge = document.getElementById('detail-classification-badge');
@@ -382,7 +417,7 @@ function showFatalError(detail) {
     document.getElementById('detail-classification-text').textContent = clsText(cls.key);
     document.getElementById('detail-eta2').textContent = fmtOmega(analysis);
     document.getElementById('detail-fval').textContent = analysis.sufficiency.ok ? fmtP(analysis.test.p) : '—';
-    document.getElementById('detail-span').textContent = t('detail.monthsUnit', view.rows.length);
+    document.getElementById('detail-span').textContent = t('detail.monthsUnit', windowRows(view.rows).length);
     renderReliability(analysis);
     renderClassViz(analysis);
 
@@ -1241,7 +1276,7 @@ function showFatalError(detail) {
     ensureContext(products);
 
     const from12 = shiftYm(latestYm(products), -11);
-    const computed = products.filter(inScope).map((p) => {
+    const computed = products.filter(inScope).filter(inPeriod).map((p) => {
       const analysis = analysisOf(p);
       const peak = analysis.seasonal.reduce((a, b) => (seasonValue(b) > seasonValue(a) ? b : a));
       return {
@@ -1259,7 +1294,7 @@ function showFatalError(detail) {
     const filtered = applyCalendarFilters(computed);
     sortCalendarRows(filtered);
 
-    countEl.textContent = t('calendar.count', filtered.length, products.length);
+    countEl.textContent = t('calendar.count', filtered.length, products.length) + periodNote();
     noResults.hidden = filtered.length > 0;
     filtered.forEach((c) => tbody.appendChild(buildCalendarRow(c)));
     updateCalendarSortIndicators();
@@ -1400,7 +1435,7 @@ function showFatalError(detail) {
   async function openColumnFilter(colKey, buttonEl) {
     if (openPopover) { closePopover(); return; }
 
-    const products = (await SalesDB.getAll()).filter(inScope);
+    const products = (await SalesDB.getAll()).filter(inScope).filter(inPeriod);
     let valueList; // [{ value, label }]
     if (colKey === 'name') {
       valueList = products.map((p) => ({ value: p.name, label: p.name })).sort((a, b) => a.label.localeCompare(b.label, 'ja'));
@@ -1505,10 +1540,27 @@ function showFatalError(detail) {
     displayMode = btn.dataset.display;
     try { localStorage.setItem(DISPLAY_KEY, displayMode); } catch (e) { /* ignore */ }
     applyDisplayMode();
+    rerenderActive();
+  }));
+  function rerenderActive() {
     const active = document.querySelector('.view.is-active').id;
     if (active === 'view-products') renderProductsList();
     else if (active === 'view-calendar') renderCalendar();
+    else if (active === 'view-momentum') renderMomentum();
     else if (active === 'view-detail' && currentProduct) renderProductDetailContent(currentProduct);
+  }
+
+  function applyPeriod() {
+    document.querySelectorAll('.period-btn').forEach((b) => b.classList.toggle('is-active', Number(b.dataset.period) === period));
+  }
+  applyPeriod();
+  document.querySelectorAll('.period-btn').forEach((btn) => btn.addEventListener('click', () => {
+    const v = Number(btn.dataset.period);
+    if (v === period) return;
+    period = v;
+    try { localStorage.setItem(PERIOD_KEY, String(period)); } catch (e) { /* ignore */ }
+    applyPeriod();
+    rerenderActive();
   }));
 
   // Last 12 月度 against the 12 before; null when there were no sales a year earlier.
@@ -1517,10 +1569,10 @@ function showFatalError(detail) {
     const prev = sumSince(rows, shiftYm(from12, -12)) - cur;
     return prev > 0 ? cur / prev - 1 : null;
   }
-  function growthChip(g) {
+  function growthChip(g, tip = t('viz.growthTip')) {
     if (g == null) return `<span class="g-chip" title="${escapeHtml(t('vprod.noPrev'))}">—</span>`;
     const cls = g >= 0.1 ? ' is-up' : (g <= -0.1 ? ' is-down' : '');
-    return `<span class="g-chip${cls}" title="${escapeHtml(t('viz.growthTip'))}">${g >= 0 ? '▲' : '▼'} ${fmtPct(Math.abs(g), 0)}</span>`;
+    return `<span class="g-chip${cls}" title="${escapeHtml(tip)}">${g >= 0 ? '▲' : '▼'} ${fmtPct(Math.abs(g), 0)}</span>`;
   }
   function cellBar(v, max) {
     return `<span class="cell-bar"><i style="width:${(Math.max(0, v) / max * 100).toFixed(1)}%"></i><em>${v ? fmtCompactYen(v) : '—'}</em></span>`;
@@ -1691,7 +1743,7 @@ function showFatalError(detail) {
       Array.from({ length: 12 }, (_, i) => `<b>${escapeHtml(monthLabel(i + 1))}</b>`).join('')}</span></div>`;
     let shop = '';
     if (seasonMode === 'absolute' && analysisCtx) {
-      const ss = analysisCtx.mu.map((m, i) => ({ month: i + 1, index: Math.exp(m), relative: 1 }));
+      const ss = periodCtx().mu.map((m, i) => ({ month: i + 1, index: Math.exp(m), relative: 1 }));
       const peak = ss.reduce((a, b) => (b.index > a.index ? b : a)).month;
       shop = `<div class="smap-row smap-shop"><span class="smap-name">${escapeHtml(t('vcal.shop'))}</span><span class="smap-cells">${cells(ss, peak, false)}</span></div>`;
     }
@@ -1889,6 +1941,151 @@ function showFatalError(detail) {
   }
 
 
+  // ---------------- 勢い: recent sales against what the usual pattern predicts ----------------
+  // For the last n 月度 (window) and the 12 月度 before it (base):
+  //   level    = Σ base sales ÷ Σ base seasonal index   (deseasonalised monthly level)
+  //   予測     = level × Σ window seasonal index
+  //   勢い     = Σ window sales ÷ 予測;  前年同期比 = Σ window sales ÷ the same 月度 a year earlier.
+  // The seasonal index is the one the 期間 switch gives. Windows end at the latest 月度 loaded.
+  let momN = 3;
+  let momMin = 1000000;
+  let momSortKey = 'ratio';
+  let momSortDir = -1;
+
+  function momentumOf(p, n) {
+    const a = analysisOf(p);
+    const by = new Map(p.rows.map((r) => [r.ymKey, r.sales]));
+    const span = (from, len) => Array.from({ length: len }, (_, i) => shiftYm(from, i));
+    const win = span(shiftYm(latestAll, -(n - 1)), n);
+    const base = span(shiftYm(latestAll, -(n + 11)), 12);
+    const idx = (k) => a.seasonal[Number(k.slice(5)) - 1].index;
+    const sales = (k) => Math.max(0, by.get(k) || 0);
+    const sum = (ks, f) => ks.reduce((s, k) => s + f(k), 0);
+    const baseSales = sum(base, sales);
+    if (baseSales <= 0) return null;
+    const level = baseSales / sum(base, idx);
+    const actual = sum(win, sales), expected = level * sum(win, idx);
+    const lastYear = sum(win.map((k) => shiftYm(k, -12)), sales);
+    const firstSale = (p.rows.find((r) => r.sales > 0) || {}).ymKey;
+    return {
+      actual, expected, baseSales, level, base, win, idx, sales,
+      ratio: expected > 0 ? actual / expected : null,
+      yoy: lastYear > 0 ? actual / lastYear - 1 : null,
+      // launched inside the base period: the level is understated, so 勢い runs high
+      isNew: !firstSale || firstSale > base[0],
+    };
+  }
+
+  async function renderMomentum() {
+    const products = await SalesDB.getAll();
+    const empty = document.getElementById('momentum-empty');
+    const scopeBar = document.getElementById('momentum-scope');
+    const tbody = document.querySelector('#momentum-table tbody');
+    tbody.innerHTML = '';
+    if (!products.length) {
+      empty.hidden = false;
+      scopeBar.innerHTML = '';
+      document.getElementById('momentum-count').textContent = '';
+      return;
+    }
+    empty.hidden = true;
+    renderScopeBar(scopeBar, products, renderMomentum);
+    ensureContext(products);
+    document.querySelectorAll('.mom-win-btn').forEach((b) => b.classList.toggle('is-active', Number(b.dataset.n) === momN));
+    document.getElementById('momentum-min').value = String(momMin);
+
+    const items = products.filter(inScope).filter(inPeriod).map((p) => {
+      const m = momentumOf(p, momN);
+      return m && { name: p.name, cls: analysisOf(p).classification.key, ...m };
+    }).filter((x) => x && x.baseSales >= momMin);
+
+    const val = (x) => {
+      switch (momSortKey) {
+        case 'name': return x.name;
+        case 'class': return clsLabel(x.cls);
+        case 'actual': return x.actual;
+        case 'expected': return x.expected;
+        case 'yoy': return x.yoy ?? -Infinity;
+        default: return x.ratio ?? -Infinity;
+      }
+    };
+    items.sort((a, b) => {
+      const av = val(a), bv = val(b);
+      return typeof av === 'string' ? momSortDir * av.localeCompare(bv, 'ja') : momSortDir * (av - bv);
+    });
+    const win = shiftYm(latestAll, -(momN - 1));
+    document.getElementById('momentum-count').textContent = t('mom.count', items.length, momN, win, latestAll) + periodNote();
+    document.querySelectorAll('#momentum-table th[data-sort]').forEach((th) => {
+      const label = th.querySelector('.th-label');
+      label.textContent = t(label.dataset.key) + (th.dataset.sort === momSortKey ? (momSortDir === 1 ? ' ▲' : ' ▼') : '');
+    });
+
+    tbody.innerHTML = items.map((x) => `
+      <tr data-name="${escapeHtml(x.name)}">
+        <td class="name-cell">${escapeHtml(x.name)}${x.isNew ? ` <span class="class-tag ended-tag" title="${escapeHtml(t('mom.newTitle'))}">${escapeHtml(t('mom.newTag'))}</span>` : ''}</td>
+        <td><span class="class-tag" style="background:var(--${x.cls}-bg); color:var(--${x.cls});">${escapeHtml(clsLabel(x.cls))}</span></td>
+        <td class="pct-cell">${fmtCompactYen(x.actual)}</td>
+        <td class="pct-cell">${fmtCompactYen(x.expected)}</td>
+        <td class="pct-cell"><b class="${x.ratio >= 1 ? 'up' : 'down'}">${x.ratio != null ? fmtPct(x.ratio, 0) : '—'}</b></td>
+        <td class="pct-cell">${x.yoy != null ? `<span class="${x.yoy >= 0 ? 'up' : 'down'}">${fmtSignedPct(x.yoy, 0)}</span>` : '—'}</td>
+      </tr>`).join('');
+    tbody.querySelectorAll('tr').forEach((tr) => tr.addEventListener('click', () => openProductDetail(tr.dataset.name)));
+    document.getElementById('momentum-no-results').hidden = items.length > 0;
+    if (isVisual()) renderMomentumVisual(items);
+  }
+
+  // Actual (solid) against expected (dashed) over the base and the window (shaded).
+  function momentumSpark(m, w, h) {
+    const ks = [...m.base, ...m.win];
+    const act = ks.map(m.sales), exp = ks.map((k) => m.level * m.idx(k));
+    const max = Math.max(...act, ...exp, 1);
+    const step = w / (ks.length - 1);
+    const X = (i) => i * step, Y = (v) => h - 2 - (v / max) * (h - 4);
+    const pts = (vals) => vals.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
+    const xs = Math.max(0, X(m.base.length) - step / 2);
+    return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" height="${h}">
+      <rect x="${xs.toFixed(1)}" y="0" width="${(w - xs).toFixed(1)}" height="${h}" fill="var(--seasonal-bg)"></rect>
+      <polyline points="${pts(exp)}" fill="none" stroke="var(--ink-soft)" stroke-width="1.2" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"></polyline>
+      <polyline points="${pts(act)}" fill="none" stroke="var(--ink)" stroke-width="1.6" vector-effect="non-scaling-stroke"></polyline>
+    </svg>`;
+  }
+
+  function renderMomentumVisual(items) {
+    const ranked = items.filter((x) => !x.isNew && x.ratio != null);
+    const up = ranked.filter((x) => x.ratio >= 1).sort((a, b) => b.ratio - a.ratio).slice(0, 20);
+    const down = ranked.filter((x) => x.ratio < 1).sort((a, b) => a.ratio - b.ratio).slice(0, 20);
+    // bars on a log scale, so ×2 and ×½ are the same length; capped at ×8 / ⅛ so a product
+    // that stopped selling doesn't squash every other bar
+    const dev = (x) => Math.min(3, Math.abs(Math.log2(Math.max(x.ratio, 1e-3))));
+    const maxDev = Math.max(0.3, ...[...up, ...down].map(dev));
+    const list = (arr, isUp) => (arr.length ? arr.map((x) => `
+      <div class="mom-row" data-name="${escapeHtml(x.name)}" title="${escapeHtml(t('mom.rowTip', x.name, fmtCompactYen(x.actual), fmtCompactYen(x.expected)))}">
+        <span class="dv-name">${escapeHtml(x.name)}</span>
+        <span class="dv-bar"><i class="${isUp ? 'is-up' : 'is-down'}" style="width:${Math.min(100, dev(x) / maxDev * 100).toFixed(1)}%"></i></span>
+        <span class="dv-val ${isUp ? 'up' : 'down'}">${fmtPct(x.ratio, 0)}</span>
+        ${growthChip(x.yoy, t('mom.yoyTip'))}
+        ${momentumSpark(x, 120, 24)}
+      </div>`).join('') : `<p class="muted-small">${escapeHtml(t('vcal.none'))}</p>`);
+    document.getElementById('mom-up').innerHTML = list(up, true);
+    document.getElementById('mom-down').innerHTML = list(down, false);
+    document.querySelectorAll('#momentum-visual .mom-row').forEach((el) => el.addEventListener('click', () => openProductDetail(el.dataset.name)));
+  }
+
+  document.querySelectorAll('.mom-win-btn').forEach((btn) => btn.addEventListener('click', () => {
+    momN = Number(btn.dataset.n);
+    renderMomentum();
+  }));
+  document.getElementById('momentum-min').addEventListener('change', (e) => {
+    momMin = Number(e.target.value);
+    renderMomentum();
+  });
+  document.querySelectorAll('#momentum-table th[data-sort]').forEach((th) => th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    if (momSortKey === key) momSortDir *= -1;
+    else { momSortKey = key; momSortDir = key === 'name' || key === 'class' ? 1 : -1; }
+    renderMomentum();
+  }));
+
   function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
@@ -1903,6 +2100,7 @@ function showFatalError(detail) {
     renderProductsList();
     renderCalendar();
     renderNotesView();
+    if (document.getElementById('view-momentum').classList.contains('is-active')) renderMomentum();
     if (currentProduct && document.getElementById('view-detail').classList.contains('is-active')) {
       renderProductDetailContent(currentProduct);
     }

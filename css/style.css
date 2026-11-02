@@ -141,7 +141,7 @@ html, body {
   margin-bottom: 8px;
 }
 
-.lang-btn, .mode-btn {
+.lang-btn, .mode-btn, .period-btn {
   font-family: var(--font-body);
   font-size: 11.5px;
   font-weight: 700;
@@ -152,10 +152,10 @@ html, body {
   color: var(--ink-soft);
 }
 
-.lang-btn + .lang-btn, .mode-btn + .mode-btn { border-left: 1px solid var(--line); }
-.lang-btn:hover, .mode-btn:hover { background: var(--paper); }
+.lang-btn + .lang-btn, .mode-btn + .mode-btn, .period-btn + .period-btn { border-left: 1px solid var(--line); }
+.lang-btn:hover, .mode-btn:hover, .period-btn:hover { background: var(--paper); }
 .lang-btn.is-active { background: var(--ink); color: var(--paper); }
-.mode-btn.is-active { background: var(--seasonal); color: #fff; }
+.mode-btn.is-active, .period-btn.is-active { background: var(--seasonal); color: #fff; }
 
 /* ---------- views ---------- */
 .view { display: none; padding-top: 32px; }
@@ -1187,3 +1187,20 @@ body.is-visual .spike-item { border: 1px solid var(--line-soft); border-radius: 
 .legend-btn.is-off { opacity: 0.4; text-decoration: line-through; }
 .legend-reset { border-color: var(--line); color: var(--seasonal); font-weight: 700; }
 .legend-hint { font-size: 10.5px; color: var(--ink-soft); opacity: 0.8; margin-left: auto; }
+
+/* 期間 switch */
+.period-toggle { align-items: center; }
+.period-label { font-size: 11px; font-weight: 700; color: var(--ink-soft); padding: 0 8px 0 12px; border-right: 1px solid var(--line); align-self: stretch; display: flex; align-items: center; }
+
+/* 勢い view */
+.mom-min { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); }
+.mom-min select { font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.mom-caption { margin: 0 0 8px; }
+#momentum-table tbody tr { cursor: pointer; }
+.mom-row {
+  display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 46px 62px 120px; gap: 8px;
+  align-items: center; padding: 3px 4px; font-size: 12px; cursor: pointer; border-radius: var(--radius);
+}
+.mom-row:hover { background: var(--paper); }
+.mom-row .g-chip { text-align: right; }
+@media (max-width: 760px) { .mom-row { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 46px 62px; } .mom-row .spark { display: none; } }

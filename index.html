@@ -6,7 +6,7 @@
 <title>商品売上分析 | THD Sales Ledger</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261102b" />
+<link rel="stylesheet" href="css/style.css?v=20261102d" />
 </head>
 <body>
 
@@ -25,8 +25,15 @@
         <button class="tab-btn is-active" data-view="upload" role="tab" data-i18n="nav.upload">アップロード</button>
         <button class="tab-btn" data-view="products" role="tab" data-i18n="nav.products">商品一覧</button>
         <button class="tab-btn" data-view="calendar" role="tab" data-i18n="nav.calendar">季節カレンダー</button>
+        <button class="tab-btn" data-view="momentum" role="tab" data-i18n="nav.momentum">勢い</button>
         <button class="tab-btn" data-view="notes" role="tab" data-i18n="nav.notes">メモ</button>
       </nav>
+      <div class="lang-toggle period-toggle" role="group" aria-label="Period">
+        <span class="period-label" data-i18n="period.label">期間</span>
+        <button type="button" class="period-btn" data-period="0" data-i18n="period.all">全期間</button>
+        <button type="button" class="period-btn" data-period="5" data-i18n="period.y5">直近5年</button>
+        <button type="button" class="period-btn" data-period="3" data-i18n="period.y3">直近3年</button>
+      </div>
       <div class="lang-toggle mode-toggle" role="group" aria-label="Display">
         <button type="button" class="mode-btn" data-display="numbers" data-i18n="display.numbers">数値</button>
         <button type="button" class="mode-btn" data-display="visual" data-i18n="display.visual">ビジュアル</button>
@@ -354,6 +361,58 @@
       </div>
     </section>
 
+    <!-- ===================== MOMENTUM VIEW ===================== -->
+    <section id="view-momentum" class="view">
+      <div class="view-head">
+        <h2 data-i18n="mom.heading">勢い</h2>
+        <p class="hint" data-i18n="mom.hint"></p>
+      </div>
+
+      <div id="momentum-scope" class="scope-bar"></div>
+      <div class="calendar-tools">
+        <div class="trend-mode-group">
+          <button type="button" class="trend-mode-btn mom-win-btn is-active" data-n="3" data-i18n="mom.n3">直近3ヶ月度</button>
+          <button type="button" class="trend-mode-btn mom-win-btn" data-n="6" data-i18n="mom.n6">直近6ヶ月度</button>
+          <button type="button" class="trend-mode-btn mom-win-btn" data-n="12" data-i18n="mom.n12">直近12ヶ月度</button>
+        </div>
+        <label class="mom-min"><span data-i18n="mom.minLabel">基準期間の売上:</span>
+          <select id="momentum-min">
+            <option value="0" data-i18n="mom.minAll">すべて</option>
+            <option value="1000000" data-i18n="mom.min100">100万円以上</option>
+            <option value="10000000" data-i18n="mom.min1000">1000万円以上</option>
+          </select>
+        </label>
+        <p id="momentum-count" class="filter-count"></p>
+      </div>
+
+      <div id="momentum-empty" class="empty-state" hidden>
+        <p class="empty-title" data-i18n="products.emptyTitle">まだデータがありません</p>
+        <p class="empty-sub" data-i18n="products.emptySub"></p>
+      </div>
+      <div id="momentum-no-results" class="empty-state" hidden>
+        <p class="empty-title" data-i18n="calendar.noResultsTitle">条件に一致する商品がありません</p>
+      </div>
+
+      <div id="momentum-visual" class="only-visual">
+        <div class="card viz-card">
+          <p class="muted-small viz-caption mom-caption" data-i18n="mom.visualNote"></p>
+          <div class="vcal-split">
+            <div><h4 class="up" data-i18n="mom.up">予測を上回る</h4><div id="mom-up"></div></div>
+            <div><h4 class="down" data-i18n="mom.down">予測を下回る</h4><div id="mom-down"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap only-numbers">
+        <table id="momentum-table">
+          <thead><tr>
+            <th data-sort="name" class="sortable"><span class="th-label" data-key="mom.thName">商品名</span></th><th data-sort="class" class="sortable"><span class="th-label" data-key="mom.thClass">判定</span></th><th data-sort="actual" class="sortable"><span class="th-label" data-key="mom.thActual">実績</span></th>
+            <th data-sort="expected" class="sortable"><span class="th-label" data-key="mom.thExpected">予測</span></th><th data-sort="ratio" class="sortable"><span class="th-label" data-key="mom.thRatio">実績÷予測</span></th><th data-sort="yoy" class="sortable"><span class="th-label" data-key="mom.thYoy">前年同期比</span></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- ===================== NOTES VIEW ===================== -->
     <section id="view-notes" class="view">
       <div class="view-head">
@@ -411,10 +470,10 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="js/i18n.js?v=20261102b"></script>
-<script src="js/db.js?v=20261102b"></script>
-<script src="js/parse.js?v=20261102b"></script>
-<script src="js/stats.js?v=20261102b"></script>
-<script src="js/app.js?v=20261102b"></script>
+<script src="js/i18n.js?v=20261102d"></script>
+<script src="js/db.js?v=20261102d"></script>
+<script src="js/parse.js?v=20261102d"></script>
+<script src="js/stats.js?v=20261102d"></script>
+<script src="js/app.js?v=20261102d"></script>
 </body>
 </html>
