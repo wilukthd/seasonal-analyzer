@@ -1177,3 +1177,13 @@ body.is-visual .spike-item { border: 1px solid var(--line-soft); border-radius: 
   .mix-row { grid-template-columns: 96px 1fr; }
   .dumb-row { grid-template-columns: 96px 1fr 80px; }
 }
+
+/* clickable legend on the buyer charts */
+.legend-btn, .legend-reset {
+  font: inherit; font-size: 11.5px; color: var(--ink-soft); background: none; cursor: pointer;
+  border: 1px solid transparent; border-radius: 20px; padding: 2px 8px; user-select: none;
+}
+.legend-btn:hover, .legend-reset:hover { border-color: var(--line); color: var(--ink); }
+.legend-btn.is-off { opacity: 0.4; text-decoration: line-through; }
+.legend-reset { border-color: var(--line); color: var(--seasonal); font-weight: 700; }
+.legend-hint { font-size: 10.5px; color: var(--ink-soft); opacity: 0.8; margin-left: auto; }

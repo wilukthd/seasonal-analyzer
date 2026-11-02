@@ -551,14 +551,18 @@ function showFatalError(detail) {
     return out;
   }
 
+  // Layers switched off in the buyer legend: 0–3 = buyer types, 'repeat' = the repurchase line.
+  // Shared by the stacked chart and the visual mix bars; kept while moving between products.
+  const buyerHidden = new Set();
+
   function renderBuyerChart(container, rows) {
     const W = 1000, H = 210, padTop = 14, padBottom = 24, padL = 34, padR = 40;
     const usableW = W - padL - padR, usableH = H - padTop - padBottom;
-    const maxV = Math.max(...rows.map((r) => sumB(r.buyers)), 1);
+    const order = [2, 3, 1, 0].filter((k) => !buyerHidden.has(k));   // stack 継続 at the bottom
+    const maxV = Math.max(...rows.map((r) => order.reduce((s, k) => s + r.buyers[k], 0)), 1);
     const slot = usableW / rows.length, bw = Math.max(1, slot * 0.72);
     const y = (v) => padTop + usableH - (v / maxV) * usableH;
     const colors = BUYER_KEYS.map((k) => `var(--b-${k})`);
-    const order = [2, 3, 1, 0];   // stack 継続 at the bottom
     const bars = rows.map((r, i) => {
       const x = padL + i * slot + (slot - bw) / 2;
       let acc = 0;
@@ -584,20 +588,52 @@ function showFatalError(detail) {
     let seg = [];
     pts.forEach((pt) => { if (pt) seg.push(pt); else if (seg.length) { segs.push(seg); seg = []; } });
     if (seg.length) segs.push(seg);
-    const lines = segs.map((sg) => (sg.length > 1
+    const showLine = !buyerHidden.has('repeat');
+    const lines = !showLine ? '' : segs.map((sg) => (sg.length > 1
       ? `<polyline points="${sg.map(([a, b]) => `${a.toFixed(1)},${b.toFixed(1)}`).join(' ')}" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-dasharray="4 3"></polyline>`
       : `<circle cx="${sg[0][0].toFixed(1)}" cy="${sg[0][1].toFixed(1)}" r="2.2" fill="var(--ink)"></circle>`)).join('');
     const xLabels = rows.map((r, i) => ((r.month === 1 || i === 0)
       ? `<text x="${(padL + i * slot + slot / 2).toFixed(1)}" y="${H - 7}" font-size="11" fill="var(--ink-soft)" text-anchor="middle">${r.year}</text>` : '')).join('');
     const axis = `<text x="${padL - 6}" y="${padTop + 9}" font-size="10.5" fill="var(--ink-soft)" text-anchor="end">${fmtInt(maxV)}</text>
-      <text x="${padL - 6}" y="${padTop + usableH}" font-size="10.5" fill="var(--ink-soft)" text-anchor="end">0</text>
-      <text x="${W - padR + 6}" y="${padTop + 9}" font-size="10.5" fill="var(--ink-soft)">100%</text>
-      <text x="${W - padR + 6}" y="${padTop + usableH}" font-size="10.5" fill="var(--ink-soft)">0%</text>`;
-    const legend = order.map((k) => `<span><i style="background:${colors[k]}"></i>${escapeHtml(t('buyers.' + BUYER_KEYS[k]))}</span>`).join('')
-      + `<span><i class="legend-line"></i>${escapeHtml(t('buyers.legendRepeat'))}</span>`;
+      <text x="${padL - 6}" y="${padTop + usableH}" font-size="10.5" fill="var(--ink-soft)" text-anchor="end">0</text>`
+      + (showLine ? `<text x="${W - padR + 6}" y="${padTop + 9}" font-size="10.5" fill="var(--ink-soft)">100%</text>
+      <text x="${W - padR + 6}" y="${padTop + usableH}" font-size="10.5" fill="var(--ink-soft)">0%</text>` : '');
     container.innerHTML = `
       <svg viewBox="0 0 ${W} ${H}" class="trend-svg" preserveAspectRatio="xMidYMid meet">${bars}${lines}${xLabels}${axis}</svg>
-      <div class="buyer-legend">${legend}</div>`;
+      ${buyerLegend(true)}`;
+    bindBuyerLegend(container);
+  }
+
+  // Clickable legend: each item shows / hides its layer; "only" keeps just that buyer type.
+  function buyerLegend(withLine) {
+    const item = (key, swatch, label) => `<button type="button" class="legend-btn${buyerHidden.has(key) ? ' is-off' : ''}" data-layer="${key}" aria-pressed="${!buyerHidden.has(key)}">${swatch}${escapeHtml(label)}</button>`;
+    return `<div class="buyer-legend">${[2, 3, 1, 0].map((k) => item(k, `<i style="background:var(--b-${BUYER_KEYS[k]})"></i>`, t('buyers.' + BUYER_KEYS[k]))).join('')}`
+      + (withLine ? item('repeat', '<i class="legend-line"></i>', t('buyers.legendRepeat')) : '')
+      + (buyerHidden.size ? `<button type="button" class="legend-reset">${escapeHtml(t('buyers.legendShowAll'))}</button>` : '')
+      + `<span class="legend-hint">${escapeHtml(t('buyers.legendHint'))}</span></div>`;
+  }
+  function bindBuyerLegend(root) {
+    const rerender = () => { if (currentView) renderBuyers(currentView); };
+    let pending = null;   // a single click waits briefly so a double-click can replace it
+    root.querySelectorAll('.legend-btn').forEach((btn) => {
+      const key = btn.dataset.layer === 'repeat' ? 'repeat' : Number(btn.dataset.layer);
+      btn.addEventListener('click', () => {
+        clearTimeout(pending);
+        pending = setTimeout(() => {
+          if (buyerHidden.has(key)) buyerHidden.delete(key); else buyerHidden.add(key);
+          rerender();
+        }, 220);
+      });
+      // double-click a buyer type: show that type alone
+      btn.addEventListener('dblclick', () => {
+        clearTimeout(pending);
+        if (key === 'repeat') return;
+        [0, 1, 2, 3].forEach((k) => (k === key ? buyerHidden.delete(k) : buyerHidden.add(k)));
+        rerender();
+      });
+    });
+    const reset = root.querySelector('.legend-reset');
+    if (reset) reset.addEventListener('click', () => { buyerHidden.clear(); rerender(); });
   }
 
   document.querySelectorAll('.buyer-range-btn').forEach((btn) => {
@@ -1799,7 +1835,7 @@ function showFatalError(detail) {
       <div class="mix-row"><span class="mix-label">${escapeHtml(label)}</span>
         <span class="mix-track"><span class="mix-bar" style="width:${(total / scale * 100).toFixed(1)}%">${order.map((k) => {
           const w = total ? v[k] / total * 100 : 0;
-          return w ? `<i style="width:${w.toFixed(2)}%;background:var(--b-${BUYER_KEYS[k]})" title="${escapeHtml(t('buyers.' + BUYER_KEYS[k]) + ' ' + fmtInt(v[k]))}">${w >= 9 ? fmtInt(v[k]) : ''}</i>` : '';
+          return w && !buyerHidden.has(k) ? `<i style="width:${w.toFixed(2)}%;background:var(--b-${BUYER_KEYS[k]})" title="${escapeHtml(t('buyers.' + BUYER_KEYS[k]) + ' ' + fmtInt(v[k]))}">${w >= 9 ? fmtInt(v[k]) : ''}</i>` : '';
         }).join('')}</span></span></div>`;
     let html = `<div class="bviz-block"><h4>${escapeHtml(t('vdet.mixHeading'))}</h4>
       ${mix(t('vdet.mixCur', fmtInt(s.n)), s.cur, s.n)}${s.pn ? mix(t('vdet.mixPrev', fmtInt(s.pn)), s.prev, s.pn) : ''}</div>`;
