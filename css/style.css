@@ -1204,3 +1204,22 @@ body.is-visual .spike-item { border: 1px solid var(--line-soft); border-radius: 
 .mom-row:hover { background: var(--paper); }
 .mom-row .g-chip { text-align: right; }
 @media (max-width: 760px) { .mom-row { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 46px 62px; } .mom-row .spark { display: none; } }
+
+/* 受注方法 */
+.ch-select { font: inherit; font-size: 11.5px; font-weight: 700; border: none; background: var(--surface); color: var(--ink-soft); padding: 6px 8px; cursor: pointer; }
+.ch-select.is-on { background: var(--seasonal); color: #fff; }
+.chs-list { margin-bottom: 10px; }
+.chs-row { display: grid; grid-template-columns: 130px 1fr 52px 66px; gap: 8px; align-items: center; font-size: 12px; padding: 2px 0; }
+.chs-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chs-name i, .chs-dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.chs-share { font-family: var(--font-mono); font-size: 11.5px; text-align: right; }
+.chs-row .g-chip { text-align: right; }
+.ch-table td, .ch-table th { white-space: nowrap; }
+.ch-table td.muted-small { white-space: normal; }
+.ch-table tr.ch-total td { font-weight: 700; border-top: 2px solid var(--line); }
+#chtab-share { margin-bottom: 14px; }
+.chtab-season-h { margin: 6px 0 6px; }
+#chtab-movers tbody tr { cursor: pointer; }
+#channel-summary .table-wrap { margin-bottom: 10px; }
+#chtab-up .dv-row, #chtab-down .dv-row { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 84px 62px; }
+#chtab-up .dv-val, #chtab-down .dv-val { white-space: nowrap; }

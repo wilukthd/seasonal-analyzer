@@ -55,6 +55,16 @@ seconds and merge by month like any upload, keeping your notes.
   series out; products launched during the base period are tagged 新 and left out of the
   visual ranking, because their 予測 runs low. Visual mode shows the top 20 above and below
   expected with a small actual-vs-expected chart each.
+- **受注方法** (order channel = the order header's チャネル区分), from products.json built on or
+  after 2026-11-02. The 20 codes are grouped into WEB本店 / モール / 電話 / FAX・ハガキ / 来店 /
+  セミナー / その他 (`CHANNEL_GROUPS` in `app.js`; an unknown code counts as その他).
+  - **受注方法 tab**: monthly sales stacked by group (clickable legend), each group's share and
+    change against a year earlier, each group's own seasonal pattern, and the series that gained
+    or lost most within a group (in yen, series with ¥1M+ in either 12-月度 period).
+  - **Detail card**: the same breakdown for one series or the selected SKUs.
+  - **Top-bar filter**: pick one group and the list, calendar, 勢い and detail pages run on that
+    group's sales only. Units, lines, customers and buyer types are not split by channel, so
+    they show as — while filtering; series without channel data drop out.
 - **月度**: all months are fiscal months (21st of the previous month to the 20th).
 
 ## What it does

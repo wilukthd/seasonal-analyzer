@@ -58,6 +58,7 @@ function showFatalError(detail) {
       if (btn.dataset.view === 'calendar') renderCalendar();
       if (btn.dataset.view === 'notes') renderNotesView();
       if (btn.dataset.view === 'momentum') renderMomentum();
+      if (btn.dataset.view === 'channels') renderChannelsTab();
     });
   });
 
@@ -208,7 +209,7 @@ function showFatalError(detail) {
   const analysisCache = new Map();
   const periodCtxCache = new Map();
   function ensureContext(products) {
-    const sig = products.length + '|' + products.reduce((m, p) => (p.lastUpdatedAt > m ? p.lastUpdatedAt : m), '');
+    const sig = chFilter + '|' + products.length + '|' + products.reduce((m, p) => (p.lastUpdatedAt > m ? p.lastUpdatedAt : m), '');
     if (sig === analysisSig && analysisCtx) return;
     const bundle = products.filter((p) => acctKey(p) === '商品売上高');
     const manual = products.filter((p) => acctKey(p) === ACCT_MANUAL);
@@ -247,7 +248,7 @@ function showFatalError(detail) {
   }
 
   function analysisOf(p) {
-    const key = p.name + '|' + p.lastUpdatedAt + '|' + period + (p.selection ? '|' + p.selection.codes.join(',') : '');
+    const key = p.name + '|' + p.lastUpdatedAt + '|' + period + '|' + chFilter + (p.selection ? '|' + p.selection.codes.join(',') : '');
     if (!analysisCache.has(key)) analysisCache.set(key, SalesStats.analyze(windowRows(p.rows), periodCtx(), p.name));
     return analysisCache.get(key);
   }
@@ -283,7 +284,7 @@ function showFatalError(detail) {
 
   // ---------------- products list ----------------
   async function renderProductsList() {
-    const products = await SalesDB.getAll();
+    const products = await loadAll();
     const tbody = document.querySelector('#products-table tbody');
     const empty = document.getElementById('products-empty');
     const noResults = document.getElementById('products-no-results');
@@ -345,7 +346,7 @@ function showFatalError(detail) {
       return productsSortDir * (av - bv);
     });
 
-    countEl.textContent = t('products.count', filtered.length, products.length) + periodNote();
+    countEl.textContent = t('products.count', filtered.length, products.length) + periodNote() + channelNote();
     noResults.hidden = filtered.length > 0;
 
     filtered.forEach((p) => {
@@ -385,9 +386,9 @@ function showFatalError(detail) {
 
   // ---------------- product detail ----------------
   async function openProductDetail(name) {
-    const record = await SalesDB.get(name);
+    const record = await loadOne(name);
     if (!record) return;
-    ensureContext(await SalesDB.getAll());
+    ensureContext(await loadAll());
     if (!currentProduct || currentProduct.name !== name) skuSelection = null;
     currentProduct = record;
     showView('detail');
@@ -408,7 +409,7 @@ function showFatalError(detail) {
     document.getElementById('detail-sub').textContent =
       t('detail.sub', first.ymKey, last.ymKey, record.sourceFileName)
       + (record.accounting !== undefined ? t('detail.subMeta', acctLabel(acctKey(record)), isActive(record)) : '')
-      + periodNote();
+      + periodNote() + channelNote();
 
     const cls = analysis.classification;
     const badge = document.getElementById('detail-classification-badge');
@@ -431,6 +432,7 @@ function showFatalError(detail) {
     renderRawViz(view.rows, analysis);
     renderSkuTable(record);
     renderBuyers(view);
+    renderChannelCard(view);
     initTrendSection(view.rows, record.name);
   }
 
@@ -443,8 +445,13 @@ function showFatalError(detail) {
     if (!chosen.length || chosen.length === skus.length) return record;
     const byKey = new Map();
     chosen.forEach((s) => s.rows.forEach((r) => {
-      const o = byKey.get(r[0]) || { sales: 0, qty: 0, orderCount: 0 };
+      const o = byKey.get(r[0]) || { sales: 0, qty: 0, orderCount: 0, ch: null };
       o.sales += r[1]; o.qty += r[2]; o.orderCount += r[3];
+      const c = s.ch && s.ch[r[0]];
+      if (c) {
+        o.ch = o.ch || {};
+        Object.keys(c).forEach((k) => { o.ch[k] = (o.ch[k] || 0) + c[k]; });
+      }
       byKey.set(r[0], o);
     }));
     const single = chosen.length === 1 ? new Map(chosen[0].rows.map((r) => [r[0], r])) : null;
@@ -454,6 +461,8 @@ function showFatalError(detail) {
         orders: null, totalCustomers: null, newCustomers: null, existingCustomers: null };
       const sr = single && single.get(k);
       if (sr && sr.length >= 10) row.buyers = sr.slice(4, 10);
+      if (!row.ch) delete row.ch;
+      if (chFilter) { row.qty = null; row.orderCount = null; }
       return row;
     });
     return { ...record, rows, skus: chosen,
@@ -531,6 +540,14 @@ function showFatalError(detail) {
   function renderBuyers(view) {
     const card = document.getElementById('buyer-card');
     const rows = view.rows.filter((r) => Array.isArray(r.buyers));
+    if (currentProduct.buyersHidden) {
+      card.hidden = false;
+      document.getElementById('buyer-sub').textContent = '';
+      document.getElementById('buyer-summary').innerHTML = document.getElementById('buyer-viz').innerHTML =
+        `<p class="is-weak">${escapeHtml(t('buyers.channelHidden'))}</p>`;
+      document.getElementById('buyer-chart').innerHTML = '';
+      return;
+    }
     const seriesHas = (currentProduct.rows || []).some((r) => Array.isArray(r.buyers));
     card.hidden = !seriesHas;
     if (!seriesHas) return;
@@ -1086,8 +1103,8 @@ function showFatalError(detail) {
     [...rows].reverse().forEach((r) => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>${r.ymKey}</td><td>${fmtYen(r.sales)}</td><td>${fmtInt(r.qty)}</td>
-        <td>${fmtInt(r.orderCount)}</td><td>${r.orders != null ? fmtInt(r.orders) : '—'}</td><td>${r.totalCustomers != null ? fmtInt(r.totalCustomers) : '—'}</td>
+        <td>${r.ymKey}</td><td>${fmtYen(r.sales)}</td><td>${r.qty != null ? fmtInt(r.qty) : '—'}</td>
+        <td>${r.orderCount != null ? fmtInt(r.orderCount) : '—'}</td><td>${r.orders != null ? fmtInt(r.orders) : '—'}</td><td>${r.totalCustomers != null ? fmtInt(r.totalCustomers) : '—'}</td>
         <td>${r.newCustomers != null ? fmtInt(r.newCustomers) : '—'}</td><td>${r.existingCustomers != null ? fmtInt(r.existingCustomers) : '—'}</td>
       `;
       tbody.appendChild(tr);
@@ -1114,7 +1131,7 @@ function showFatalError(detail) {
   let notesMode = 'list';
 
   async function renderNotesView() {
-    const products = await SalesDB.getAll();
+    const products = await loadAll();
     const tbody = document.querySelector('#notes-table tbody');
     const calGrid = document.getElementById('notes-calendar-grid');
     const empty = document.getElementById('notes-empty');
@@ -1255,7 +1272,7 @@ function showFatalError(detail) {
 
   // ---------------- calendar ----------------
   async function renderCalendar() {
-    const products = await SalesDB.getAll();
+    const products = await loadAll();
     const empty = document.getElementById('calendar-empty');
     const noResults = document.getElementById('calendar-no-results');
     const countEl = document.getElementById('calendar-count');
@@ -1294,7 +1311,7 @@ function showFatalError(detail) {
     const filtered = applyCalendarFilters(computed);
     sortCalendarRows(filtered);
 
-    countEl.textContent = t('calendar.count', filtered.length, products.length) + periodNote();
+    countEl.textContent = t('calendar.count', filtered.length, products.length) + periodNote() + channelNote();
     noResults.hidden = filtered.length > 0;
     filtered.forEach((c) => tbody.appendChild(buildCalendarRow(c)));
     updateCalendarSortIndicators();
@@ -1435,13 +1452,13 @@ function showFatalError(detail) {
   async function openColumnFilter(colKey, buttonEl) {
     if (openPopover) { closePopover(); return; }
 
-    const products = (await SalesDB.getAll()).filter(inScope).filter(inPeriod);
+    const products = (await loadAll()).filter(inScope).filter(inPeriod);
     let valueList; // [{ value, label }]
     if (colKey === 'name') {
       valueList = products.map((p) => ({ value: p.name, label: p.name })).sort((a, b) => a.label.localeCompare(b.label, 'ja'));
     } else {
       const seen = new Map();
-      ensureContext(await SalesDB.getAll());
+      ensureContext(await loadAll());
       products.forEach((p) => {
         const a = analysisOf(p);
         seen.set(a.classification.key, clsLabel(a.classification.key));
@@ -1547,7 +1564,10 @@ function showFatalError(detail) {
     if (active === 'view-products') renderProductsList();
     else if (active === 'view-calendar') renderCalendar();
     else if (active === 'view-momentum') renderMomentum();
-    else if (active === 'view-detail' && currentProduct) renderProductDetailContent(currentProduct);
+    else if (active === 'view-channels') renderChannelsTab();
+    else if (active === 'view-detail' && currentProduct) {
+      loadOne(currentProduct.name).then((rec) => { if (rec) { currentProduct = rec; renderProductDetailContent(rec); } });
+    }
   }
 
   function applyPeriod() {
@@ -1941,6 +1961,316 @@ function showFatalError(detail) {
   }
 
 
+  // ---------------- 受注方法 (the order header's チャネル区分) ----------------
+  // products.json rows carry ch = {code: 売上金額}; SKUs carry ch = {ymKey: {code: 売上金額}}.
+  // The site works with seven groups of codes; a code not listed here counts as その他.
+  const CHANNEL_GROUPS = [
+    { key: 'web', codes: ['11'], color: '#2F6F5E' },
+    { key: 'mall', codes: ['12', '13', '14'], color: '#C9962E' },
+    { key: 'phone', codes: ['41', '42', '44'], color: '#3E5F78' },
+    { key: 'mail', codes: ['43', '45'], color: '#8A6E96' },
+    { key: 'store', codes: ['31', '32', '33', '34'], color: '#B4483C' },
+    { key: 'seminar', codes: ['71', '72', '73', '74', '75'], color: '#86B49C' },
+    { key: 'other', codes: ['81', '91'], color: '#A9B6BD' },
+  ];
+  const CHANNEL_NAMES = {
+    11: 'WEB本店', 12: '楽天', 13: 'Yahoo', 14: 'Amazon', 31: '京都来店', 32: '東京来店', 33: '京都来店(受注)',
+    34: '東京来店(受注)', 41: '京都電話', 42: '東京電話', 43: 'FAX', 44: 'コールセンター', 45: 'ハガキ・メール',
+    71: '大阪美健セミナー', 72: '東京美健セミナー', 73: '京都ショップセミナー', 74: '東京ショップセミナー',
+    75: 'その他セミナー', 81: '社員販売', 91: 'その他',
+  };
+  const groupOfCode = new Map();
+  CHANNEL_GROUPS.forEach((g, i) => g.codes.forEach((c) => groupOfCode.set(c, i)));
+  const groupIndex = (code) => (groupOfCode.has(code) ? groupOfCode.get(code) : CHANNEL_GROUPS.length - 1);
+  const chLabel = (key) => t('ch.' + key);
+  function chGroups(ch) {
+    const out = new Array(CHANNEL_GROUPS.length).fill(0);
+    if (ch) Object.keys(ch).forEach((c) => { out[groupIndex(c)] += ch[c]; });
+    return out;
+  }
+
+  // Top-bar filter: '' = every 受注方法, else one group key. Remembered per browser.
+  const CHANNEL_KEY = 'thd-sales-ledger-channel';
+  let chFilter = (() => {
+    try { const v = localStorage.getItem(CHANNEL_KEY) || ''; return CHANNEL_GROUPS.some((g) => g.key === v) ? v : ''; } catch (e) { return ''; }
+  })();
+  function chSales(ch) {
+    const i = CHANNEL_GROUPS.findIndex((g) => g.key === chFilter);
+    let s = 0;
+    if (ch) Object.keys(ch).forEach((c) => { if (groupIndex(c) === i) s += ch[c]; });
+    return s;
+  }
+  // With a filter on, every page works on that group's sales only. Units, lines, customers and
+  // buyer types are not split by 受注方法, so they are blanked rather than shown wrong.
+  function withChannel(rec) {
+    if (!chFilter) return rec;
+    const rows = rec.rows.map((r) => ({
+      ymKey: r.ymKey, year: r.year, month: r.month, sales: chSales(r.ch), qty: null, orderCount: null,
+      orders: null, totalCustomers: null, newCustomers: null, existingCustomers: null, ch: r.ch,
+    }));
+    const skus = (rec.skus || []).map((s) => ({ ...s, rows: s.rows.map((r) => [r[0], chSales(s.ch && s.ch[r[0]]), null, null]) }));
+    return { ...rec, rows, skus, buyersHidden: rec.rows.some((r) => Array.isArray(r.buyers)) };
+  }
+  // .xlsx uploads and older products.json files have no 受注方法: they drop out while filtering.
+  async function loadAll() {
+    const all = await SalesDB.getAll();
+    if (!chFilter) return all;
+    return all.filter((p) => p.rows.some((r) => r.ch)).map(withChannel).filter((p) => p.rows.some((r) => r.sales > 0));
+  }
+  async function loadOne(name) {
+    const rec = await SalesDB.get(name);
+    return rec && withChannel(rec);
+  }
+  function channelNote() {
+    return chFilter ? t('ch.note', chLabel(chFilter)) : '';
+  }
+
+  function fillChannelSelect() {
+    const sel = document.getElementById('channel-filter');
+    sel.innerHTML = `<option value="">${escapeHtml(t('ch.all'))}</option>`
+      + CHANNEL_GROUPS.map((g) => `<option value="${g.key}">${escapeHtml(chLabel(g.key))}</option>`).join('');
+    sel.value = chFilter;
+    sel.classList.toggle('is-on', !!chFilter);
+  }
+  fillChannelSelect();
+  document.getElementById('channel-filter').addEventListener('change', (e) => {
+    chFilter = e.target.value;
+    try { localStorage.setItem(CHANNEL_KEY, chFilter); } catch (err) { /* ignore */ }
+    e.target.classList.toggle('is-on', !!chFilter);
+    skuSelection = null;
+    rerenderActive();
+  });
+
+  // Last 12 月度 against the 12 before, per group. rows: series-shaped rows with ch.
+  function channelStats(rows, last) {
+    const from12 = shiftYm(last, -11), from24 = shiftYm(last, -23);
+    const n = CHANNEL_GROUPS.length;
+    const cur = new Array(n).fill(0), prev = new Array(n).fill(0);
+    rows.forEach((r) => {
+      if (r.ymKey > last || r.ymKey < from24) return;
+      const g = chGroups(r.ch), into = r.ymKey >= from12 ? cur : prev;
+      g.forEach((v, i) => { into[i] += v; });
+    });
+    const total = cur.reduce((s, v) => s + v, 0), ptotal = prev.reduce((s, v) => s + v, 0);
+    return {
+      total, ptotal, from12, last,
+      groups: CHANNEL_GROUPS.map((g, i) => ({
+        ...g, index: i, cur: cur[i], prev: prev[i],
+        share: total > 0 ? cur[i] / total : 0, prevShare: ptotal > 0 ? prev[i] / ptotal : 0,
+        yoy: prev[i] > 0 ? cur[i] / prev[i] - 1 : null,
+      })),
+    };
+  }
+
+  // Monthly stacked bars, one layer per 受注方法 group. The legend toggles layers (double-click
+  // shows one alone) and the axis rescales to what is left. hidden: a Set of group indexes.
+  function stackChart(container, rows, hidden, rerender) {
+    const W = 1000, H = 220, padTop = 14, padBottom = 24, padL = 56, padR = 8;
+    const usableW = W - padL - padR, usableH = H - padTop - padBottom;
+    const vals = rows.map((r) => chGroups(r.ch).map((v) => Math.max(0, v)));
+    const order = CHANNEL_GROUPS.map((g, i) => i).filter((i) => !hidden.has(i));
+    const maxV = Math.max(...vals.map((v) => order.reduce((s, i) => s + v[i], 0)), 1);
+    const slot = usableW / Math.max(1, rows.length), bw = Math.max(1, slot * 0.72);
+    const y = (v) => padTop + usableH - (v / maxV) * usableH;
+    const bars = rows.map((r, j) => {
+      const x = padL + j * slot + (slot - bw) / 2;
+      let acc = 0;
+      const rects = order.map((i) => {
+        const v = vals[j][i];
+        if (!v) return '';
+        const y0 = y(acc + v), h = y(acc) - y0;
+        acc += v;
+        return `<rect x="${x.toFixed(1)}" y="${y0.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${CHANNEL_GROUPS[i].color}"></rect>`;
+      }).join('');
+      const tip = `${r.ymKey}  ` + CHANNEL_GROUPS.map((g, i) => (vals[j][i] ? `${chLabel(g.key)} ${fmtCompactYen(vals[j][i])}` : '')).filter(Boolean).join(' / ');
+      return `<g><title>${escapeHtml(tip)}</title>${rects}<rect x="${(padL + j * slot).toFixed(1)}" y="${padTop}" width="${slot.toFixed(1)}" height="${usableH}" fill="transparent"></rect></g>`;
+    }).join('');
+    const xLabels = rows.map((r, j) => ((r.month === 1 || j === 0)
+      ? `<text x="${(padL + j * slot + slot / 2).toFixed(1)}" y="${H - 7}" font-size="11" fill="var(--ink-soft)" text-anchor="middle">${r.year}</text>` : '')).join('');
+    const axis = `<text x="${padL - 6}" y="${padTop + 9}" font-size="10.5" fill="var(--ink-soft)" text-anchor="end">${escapeHtml(fmtCompactYen(maxV))}</text>
+      <text x="${padL - 6}" y="${padTop + usableH}" font-size="10.5" fill="var(--ink-soft)" text-anchor="end">0</text>`;
+    const present = CHANNEL_GROUPS.map((g, i) => i).filter((i) => vals.some((v) => v[i] > 0));
+    const legend = '<div class="buyer-legend">'
+      + present.map((i) => `<button type="button" class="legend-btn${hidden.has(i) ? ' is-off' : ''}" data-layer="${i}">`
+      + `<i style="background:${CHANNEL_GROUPS[i].color}"></i>${escapeHtml(chLabel(CHANNEL_GROUPS[i].key))}</button>`).join('')
+      + (hidden.size ? `<button type="button" class="legend-reset">${escapeHtml(t('buyers.legendShowAll'))}</button>` : '')
+      + `<span class="legend-hint">${escapeHtml(t('buyers.legendHint'))}</span></div>`;
+    container.innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="trend-svg" preserveAspectRatio="xMidYMid meet">${bars}${xLabels}${axis}</svg>${legend}`;
+    let pending = null;
+    container.querySelectorAll('.legend-btn').forEach((btn) => {
+      const i = Number(btn.dataset.layer);
+      btn.addEventListener('click', () => {
+        clearTimeout(pending);
+        pending = setTimeout(() => { if (hidden.has(i)) hidden.delete(i); else hidden.add(i); rerender(); }, 220);
+      });
+      btn.addEventListener('dblclick', () => {
+        clearTimeout(pending);
+        CHANNEL_GROUPS.forEach((g, k) => (k === i ? hidden.delete(k) : hidden.add(k)));
+        rerender();
+      });
+    });
+    const reset = container.querySelector('.legend-reset');
+    if (reset) reset.addEventListener('click', () => { hidden.clear(); rerender(); });
+  }
+
+  // Share bar + change chip per group (visual mode), and the same as a table (numbers mode).
+  function channelShareHtml(st) {
+    const max = Math.max(...st.groups.map((g) => g.cur), 1);
+    return st.groups.filter((g) => g.cur > 0 || g.prev > 0).map((g) => `
+      <div class="chs-row" title="${escapeHtml(g.codes.map((c) => CHANNEL_NAMES[c] || c).join(' / '))}">
+        <span class="chs-name"><i style="background:${g.color}"></i>${escapeHtml(chLabel(g.key))}</span>
+        <span class="cell-bar"><i style="width:${(g.cur / max * 100).toFixed(1)}%;background:${g.color};opacity:0.35"></i><em>${fmtCompactYen(g.cur)}</em></span>
+        <span class="chs-share">${fmtPct(g.share, 0)}</span>
+        ${growthChip(g.yoy, t('mom.yoyTip'))}
+      </div>`).join('');
+  }
+  // extra: optional { heads: [label], cells: (group) => '<td>…</td>' } for more columns.
+  function channelTableHtml(st, extra) {
+    const rows = st.groups.filter((g) => g.cur > 0 || g.prev > 0).map((g) => `
+      <tr><td><i class="chs-dot" style="background:${g.color}"></i>${escapeHtml(chLabel(g.key))}</td>
+        <td class="muted-small">${escapeHtml(g.codes.map((c) => CHANNEL_NAMES[c] || c).join('・'))}</td>
+        <td class="pct-cell">${fmtYen(g.cur)}</td><td class="pct-cell">${fmtPct(g.share, 1)}</td>
+        <td class="pct-cell">${fmtPct(g.prevShare, 1)}</td>
+        <td class="pct-cell">${g.yoy != null ? `<span class="${g.yoy >= 0 ? 'up' : 'down'}">${fmtSignedPct(g.yoy, 0)}</span>` : '—'}</td>
+        ${extra ? extra.cells(g) : ''}</tr>`).join('');
+    const heads = [t('ch.thGroup'), t('ch.thCodes'), t('ch.thCur'), t('ch.thShare'), t('ch.thPrevShare'), t('mom.thYoy'), ...(extra ? extra.heads : [])];
+    return `<table class="ch-table"><thead><tr>${heads.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
+      <tbody>${rows}<tr class="ch-total"><td>${escapeHtml(t('ch.total'))}</td><td></td><td class="pct-cell">${fmtYen(st.total)}</td><td class="pct-cell">100%</td><td></td>
+      <td class="pct-cell">${st.ptotal > 0 ? fmtSignedPct(st.total / st.ptotal - 1, 0) : '—'}</td>${extra ? '<td></td>'.repeat(extra.heads.length) : ''}</tr></tbody></table>`;
+  }
+
+  // ---- detail page card ----
+  let chRange = 'recent';
+  const chHidden = new Set();
+  function renderChannelCard(view) {
+    const card = document.getElementById('channel-card');
+    const rows = view.rows.filter((r) => r.ch);
+    card.hidden = !rows.length;
+    if (!rows.length) return;
+    const last = rows[rows.length - 1].ymKey > latestAll ? rows[rows.length - 1].ymKey : (latestAll || rows[rows.length - 1].ymKey);
+    const st = channelStats(rows, last);
+    document.getElementById('channel-sub').textContent = t('ch.cardSub', st.from12, st.last)
+      + (view.selection ? ' ' + t('ch.subSkus', view.selection.codes.length) : '');
+    document.getElementById('channel-summary').innerHTML = `<div class="table-wrap">${channelTableHtml(st)}</div>`;
+    document.getElementById('channel-viz').innerHTML = channelShareHtml(st);
+    const shown = chRange === 'all' ? rows : rows.filter((r) => r.ymKey >= shiftYm(last, -35));
+    stackChart(document.getElementById('channel-chart'), shown, chHidden, () => renderChannelCard(currentView));
+  }
+  document.querySelectorAll('.ch-range-btn').forEach((btn) => btn.addEventListener('click', () => {
+    chRange = btn.dataset.range;
+    document.querySelectorAll('.ch-range-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
+    if (currentView) renderChannelCard(currentView);
+  }));
+
+  // ---- 受注方法 tab: the groups side by side, shop-wide ----
+  let chTabRange = 'recent';
+  let chTabGroup = 'web';
+  const chTabHidden = new Set();
+  async function renderChannelsTab() {
+    const products = await SalesDB.getAll();   // always every 受注方法: this tab compares them
+    const scopeBar = document.getElementById('channels-scope');
+    const empty = document.getElementById('channels-empty');
+    const withCh = products.filter((p) => p.rows.some((r) => r.ch));
+    empty.hidden = withCh.length > 0;
+    document.getElementById('channels-body').hidden = !withCh.length;
+    if (!withCh.length) { scopeBar.innerHTML = ''; return; }
+    renderScopeBar(scopeBar, products, renderChannelsTab);
+    const scoped = withCh.filter(inScope);
+    const last = latestYm(withCh);
+
+    // shop-wide monthly totals per code
+    const byYm = new Map();
+    scoped.forEach((p) => p.rows.forEach((r) => {
+      if (!r.ch) return;
+      const acc = byYm.get(r.ymKey) || {};
+      Object.keys(r.ch).forEach((c) => { acc[c] = (acc[c] || 0) + r.ch[c]; });
+      byYm.set(r.ymKey, acc);
+    }));
+    const rows = [...byYm.keys()].sort().map((k) => {
+      const [year, month] = k.split('-').map(Number);
+      return { ymKey: k, year, month, ch: byYm.get(k) };
+    });
+    const st = channelStats(rows, last);
+    document.getElementById('chtab-sub').textContent = t('ch.cardSub', st.from12, st.last) + ' ' + t('ch.tabScope', scoped.length);
+    const shown = chTabRange === 'all' ? rows : rows.filter((r) => r.ymKey >= shiftYm(last, -35));
+    stackChart(document.getElementById('chtab-chart'), shown, chTabHidden, renderChannelsTab);
+
+    // each group's own seasonal pattern; groups are long, large series, so no shrinkage
+    const from = period ? shiftYm(last, -(12 * period - 1)) : '';
+    const flat = { mu: new Array(12).fill(0), tau2: 1e6 };
+    const seasons = CHANNEL_GROUPS.map((g, i) => {
+      const gr = rows.filter((r) => r.ymKey >= from).map((r) => ({ ymKey: r.ymKey, year: r.year, month: r.month, sales: chGroups(r.ch)[i] }));
+      if (!gr.some((r) => r.sales > 0)) return null;
+      const a = SalesStats.analyze(gr, flat, 'ch:' + g.key + '|' + from);
+      const peak = a.seasonal.reduce((x, y) => (y.index > x.index ? y : x)).month;
+      return { a, peak };
+    });
+    document.getElementById('chtab-table').innerHTML = channelTableHtml(st, {
+      heads: [t('ch.thVerdict'), t('ch.thPeak')],
+      cells: (g) => {
+        const s = seasons[g.index];
+        if (!s) return '<td></td><td></td>';
+        const k = s.a.classification.key;
+        return `<td><span class="class-tag" style="background:var(--${k}-bg); color:var(--${k});">${escapeHtml(clsLabel(k))}</span></td><td class="pct-cell">${escapeHtml(monthLabel(s.peak))}</td>`;
+      },
+    });
+    const present = st.groups.filter((g) => g.cur > 0 || g.prev > 0);
+    document.getElementById('chtab-share').innerHTML = channelShareHtml(st);
+    document.getElementById('chtab-season').innerHTML = `<div class="smap-row smap-head"><span class="smap-name"></span><span class="smap-cells">${
+      Array.from({ length: 12 }, (_, i) => `<b>${escapeHtml(monthLabel(i + 1))}</b>`).join('')}</span></div>`
+      + present.map((g) => {
+        const s = seasons[g.index];
+        if (!s) return '';
+        const tentative = !s.a.sufficiency.ok;
+        return `<div class="smap-row" title="${escapeHtml(clsLabel(s.a.classification.key))}"><span class="smap-name"><i class="chs-dot" style="background:${g.color}"></i>${escapeHtml(chLabel(g.key))}</span><span class="smap-cells">${
+          s.a.seasonal.map((x) => `<i class="${x.month === s.peak ? 'is-peak' : ''}" style="background:${(tentative ? null : heatBg(x.index)) || 'var(--line-soft)'}" title="${escapeHtml(monthLabel(x.month) + ' ' + fmtPct(x.index, 0))}"></i>`).join('')}</span></div>`;
+      }).join('');
+    renderChannelMovers(scoped, last);
+  }
+
+  // Products whose sales in one group moved most (in yen) against the 12 月度 before.
+  function renderChannelMovers(products, last) {
+    const gi = CHANNEL_GROUPS.findIndex((g) => g.key === chTabGroup);
+    const picker = document.getElementById('chtab-groups');
+    picker.innerHTML = CHANNEL_GROUPS.map((g) => `<button type="button" class="month-btn${g.key === chTabGroup ? ' is-active' : ''}" data-g="${g.key}">${escapeHtml(chLabel(g.key))}</button>`).join('');
+    picker.querySelectorAll('.month-btn').forEach((b) => b.addEventListener('click', () => { chTabGroup = b.dataset.g; renderChannelMovers(products, last); }));
+    const from12 = shiftYm(last, -11), from24 = shiftYm(last, -23);
+    const items = products.map((p) => {
+      let cur = 0, prev = 0, all = 0;
+      p.rows.forEach((r) => {
+        if (!r.ch || r.ymKey > last || r.ymKey < from24) return;
+        const v = chGroups(r.ch)[gi];
+        if (r.ymKey >= from12) { cur += v; all += r.sales; } else prev += v;
+      });
+      return { name: p.name, cur, prev, diff: cur - prev, yoy: prev > 0 ? cur / prev - 1 : null, share: all > 0 ? cur / all : null };
+    }).filter((x) => Math.max(x.cur, x.prev) >= 1000000 && x.diff !== 0);
+    items.sort((a, b) => b.diff - a.diff);
+    document.querySelector('#chtab-movers tbody').innerHTML = items.map((x) => `
+      <tr data-name="${escapeHtml(x.name)}"><td class="name-cell">${escapeHtml(x.name)}</td>
+        <td class="pct-cell">${fmtCompactYen(x.cur)}</td><td class="pct-cell">${fmtCompactYen(x.prev)}</td>
+        <td class="pct-cell"><span class="${x.diff >= 0 ? 'up' : 'down'}">${x.diff >= 0 ? '+' : '−'}${fmtCompactYen(Math.abs(x.diff))}</span></td>
+        <td class="pct-cell">${x.yoy != null ? fmtSignedPct(x.yoy, 0) : '—'}</td>
+        <td class="pct-cell">${x.share != null ? fmtPct(x.share, 0) : '—'}</td></tr>`).join('');
+    const up = items.filter((x) => x.diff > 0).slice(0, 15);
+    const down = items.filter((x) => x.diff < 0).reverse().slice(0, 15);
+    const max = Math.max(1, ...[...up, ...down].map((x) => Math.abs(x.diff)));
+    const list = (arr, isUp) => (arr.length ? arr.map((x) => `
+      <div class="dv-row" data-name="${escapeHtml(x.name)}" title="${escapeHtml(t('ch.moverTip', x.name, fmtCompactYen(x.cur), fmtCompactYen(x.prev), x.share != null ? fmtPct(x.share, 0) : '—'))}">
+        <span class="dv-name">${escapeHtml(x.name)}</span>
+        <span class="dv-bar"><i class="${isUp ? 'is-up' : 'is-down'}" style="width:${(Math.abs(x.diff) / max * 100).toFixed(1)}%"></i></span>
+        <span class="dv-val ${isUp ? 'up' : 'down'}">${isUp ? '+' : '−'}${fmtCompactYen(Math.abs(x.diff))}</span>
+        ${growthChip(x.yoy, t('mom.yoyTip'))}
+      </div>`).join('') : `<p class="muted-small">${escapeHtml(t('vcal.none'))}</p>`);
+    document.getElementById('chtab-up').innerHTML = list(up, true);
+    document.getElementById('chtab-down').innerHTML = list(down, false);
+    document.querySelectorAll('#view-channels [data-name]').forEach((el) => el.addEventListener('click', () => openProductDetail(el.dataset.name)));
+  }
+  document.querySelectorAll('.chtab-range-btn').forEach((btn) => btn.addEventListener('click', () => {
+    chTabRange = btn.dataset.range;
+    document.querySelectorAll('.chtab-range-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
+    renderChannelsTab();
+  }));
+
   // ---------------- 勢い: recent sales against what the usual pattern predicts ----------------
   // For the last n 月度 (window) and the 12 月度 before it (base):
   //   level    = Σ base sales ÷ Σ base seasonal index   (deseasonalised monthly level)
@@ -1977,7 +2307,7 @@ function showFatalError(detail) {
   }
 
   async function renderMomentum() {
-    const products = await SalesDB.getAll();
+    const products = await loadAll();
     const empty = document.getElementById('momentum-empty');
     const scopeBar = document.getElementById('momentum-scope');
     const tbody = document.querySelector('#momentum-table tbody');
@@ -2014,7 +2344,7 @@ function showFatalError(detail) {
       return typeof av === 'string' ? momSortDir * av.localeCompare(bv, 'ja') : momSortDir * (av - bv);
     });
     const win = shiftYm(latestAll, -(momN - 1));
-    document.getElementById('momentum-count').textContent = t('mom.count', items.length, momN, win, latestAll) + periodNote();
+    document.getElementById('momentum-count').textContent = t('mom.count', items.length, momN, win, latestAll) + periodNote() + channelNote();
     document.querySelectorAll('#momentum-table th[data-sort]').forEach((th) => {
       const label = th.querySelector('.th-label');
       label.textContent = t(label.dataset.key) + (th.dataset.sort === momSortKey ? (momSortDir === 1 ? ' ▲' : ' ▼') : '');
@@ -2101,6 +2431,8 @@ function showFatalError(detail) {
     renderCalendar();
     renderNotesView();
     if (document.getElementById('view-momentum').classList.contains('is-active')) renderMomentum();
+    if (document.getElementById('view-channels').classList.contains('is-active')) renderChannelsTab();
+    fillChannelSelect();
     if (currentProduct && document.getElementById('view-detail').classList.contains('is-active')) {
       renderProductDetailContent(currentProduct);
     }

@@ -4,7 +4,8 @@
 //   notes: { [ymKey]: string },    // free-text notes on specific months, e.g. spike explanations
 //   // only for series loaded from products.json:
 //   accounting, salesType, active, skus: [{code, name, active, rows: [[ymKey, sales, qty, lines, ...buyers]]}],
-//   and on rows: buyers = [店舗新規, 商品初回, 継続, 復帰, 再購入, 新顔再購入] }
+//   and on rows: buyers = [店舗新規, 商品初回, 継続, 復帰, 再購入, 新顔再購入],
+//   ch = {受注方法コード: 売上金額}; SKUs also carry ch = {ymKey: {受注方法コード: 売上金額}} }
 
 const SalesDB = (() => {
   const DB_NAME = 'sales-ledger';
@@ -62,7 +63,8 @@ const SalesDB = (() => {
     return a.sales === b.sales && a.qty === b.qty && a.orderCount === b.orderCount
       && a.totalCustomers === b.totalCustomers && a.newCustomers === b.newCustomers
       && a.existingCustomers === b.existingCustomers
-      && JSON.stringify(a.buyers) === JSON.stringify(b.buyers);
+      && JSON.stringify(a.buyers) === JSON.stringify(b.buyers)
+      && JSON.stringify(a.ch) === JSON.stringify(b.ch);
   }
 
   // Upsert by year-month: re-uploading a product (whether the export is the

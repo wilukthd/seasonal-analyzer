@@ -6,7 +6,7 @@
 <title>商品売上分析 | THD Sales Ledger</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261102d" />
+<link rel="stylesheet" href="css/style.css?v=20261102e" />
 </head>
 <body>
 
@@ -26,8 +26,13 @@
         <button class="tab-btn" data-view="products" role="tab" data-i18n="nav.products">商品一覧</button>
         <button class="tab-btn" data-view="calendar" role="tab" data-i18n="nav.calendar">季節カレンダー</button>
         <button class="tab-btn" data-view="momentum" role="tab" data-i18n="nav.momentum">勢い</button>
+        <button class="tab-btn" data-view="channels" role="tab" data-i18n="nav.channels">受注方法</button>
         <button class="tab-btn" data-view="notes" role="tab" data-i18n="nav.notes">メモ</button>
       </nav>
+      <div class="lang-toggle period-toggle ch-toggle" role="group" aria-label="Channel">
+        <span class="period-label" data-i18n="ch.label">受注方法</span>
+        <select id="channel-filter" class="ch-select"></select>
+      </div>
       <div class="lang-toggle period-toggle" role="group" aria-label="Period">
         <span class="period-label" data-i18n="period.label">期間</span>
         <button type="button" class="period-btn" data-period="0" data-i18n="period.all">全期間</button>
@@ -252,6 +257,19 @@
           <p class="muted-small buyer-def" data-i18n="buyers.definitions">店舗新規＝その月度に会員登録 / 商品初回＝既存会員がこのシリーズ（SKU）を初めて購入 / 継続＝前回購入から180日以内 / 復帰＝前回購入から180日超。再購入率＝その月度の購入者のうち次の6ヶ月度以内にまた買った割合（直近6ヶ月度はまだ判定できません）。</p>
         </div>
 
+        <div id="channel-card" class="card card-buyers" hidden>
+          <div class="season-head">
+            <h3><span data-i18n="ch.cardHeading">受注方法別の売上</span> <span class="muted" id="channel-sub"></span></h3>
+            <div class="trend-mode-group">
+              <button type="button" class="trend-mode-btn ch-range-btn is-active" data-range="recent" data-i18n="buyers.recent">直近36ヶ月度</button>
+              <button type="button" class="trend-mode-btn ch-range-btn" data-range="all" data-i18n="detail.trendAll">全期間</button>
+            </div>
+          </div>
+          <div id="channel-summary" class="only-numbers"></div>
+          <div id="channel-viz" class="only-visual chs-list"></div>
+          <div id="channel-chart" class="trend-chart"></div>
+        </div>
+
         <div class="card card-raw">
           <h3 data-i18n="detail.rawHeading">月別実績</h3>
           <div id="viz-raw" class="only-visual"></div>
@@ -413,6 +431,59 @@
       </div>
     </section>
 
+    <!-- ===================== 受注方法 VIEW ===================== -->
+    <section id="view-channels" class="view">
+      <div class="view-head">
+        <h2 data-i18n="ch.heading">受注方法</h2>
+        <p class="hint" data-i18n="ch.hint"></p>
+      </div>
+      <div id="channels-scope" class="scope-bar"></div>
+      <div id="channels-empty" class="empty-state" hidden>
+        <p class="empty-title" data-i18n="ch.emptyTitle">受注方法のデータがありません</p>
+        <p class="empty-sub" data-i18n="ch.emptySub"></p>
+      </div>
+      <div id="channels-body">
+        <div class="card viz-card">
+          <div class="season-head">
+            <h3><span data-i18n="ch.trendHeading">受注方法別の月次売上</span> <span class="muted" id="chtab-sub"></span></h3>
+            <div class="trend-mode-group">
+              <button type="button" class="trend-mode-btn chtab-range-btn is-active" data-range="recent" data-i18n="buyers.recent">直近36ヶ月度</button>
+              <button type="button" class="trend-mode-btn chtab-range-btn" data-range="all" data-i18n="detail.trendAll">全期間</button>
+            </div>
+          </div>
+          <div id="chtab-chart" class="trend-chart"></div>
+        </div>
+        <div class="card viz-card">
+          <h3 data-i18n="ch.summaryHeading">直近12ヶ月度の構成と伸び</h3>
+          <div class="table-wrap only-numbers" id="chtab-table"></div>
+          <div class="only-visual">
+            <div id="chtab-share"></div>
+            <h4 class="chtab-season-h" data-i18n="ch.seasonHeading">受注方法ごとの季節パターン</h4>
+            <div id="chtab-season" class="smap"></div>
+            <div class="viz-legend heat-legend"><span data-i18n="vcal.legendLow">年平均より低い</span><i class="heat-scale"></i><span data-i18n="vcal.legendHigh">年平均より高い</span><span class="smap-peak-key" data-i18n="vcal.legendPeak">黒枠＝ピーク月度</span></div>
+          </div>
+        </div>
+        <div class="card viz-card">
+          <h3 data-i18n="ch.moversHeading">受注方法ごとの伸びた商品・落ちた商品</h3>
+          <div id="chtab-groups" class="month-picker"></div>
+          <p class="muted-small viz-caption" data-i18n="ch.moversNote"></p>
+          <div class="table-wrap table-wrap-tall only-numbers">
+            <table id="chtab-movers">
+              <thead><tr>
+                <th data-i18n="mom.thName">商品名</th><th data-i18n="ch.thCur">直近12ヶ月度</th><th data-i18n="ch.thPrev">前の12ヶ月度</th>
+                <th data-i18n="ch.thDiff">増減</th><th data-i18n="mom.thYoy">前年同期比</th><th data-i18n="ch.thOwnShare">この受注方法の割合</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="vcal-split only-visual">
+            <div><h4 class="up" data-i18n="ch.up">伸びた</h4><div id="chtab-up"></div></div>
+            <div><h4 class="down" data-i18n="ch.down">落ちた</h4><div id="chtab-down"></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ===================== NOTES VIEW ===================== -->
     <section id="view-notes" class="view">
       <div class="view-head">
@@ -470,10 +541,10 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="js/i18n.js?v=20261102d"></script>
-<script src="js/db.js?v=20261102d"></script>
-<script src="js/parse.js?v=20261102d"></script>
-<script src="js/stats.js?v=20261102d"></script>
-<script src="js/app.js?v=20261102d"></script>
+<script src="js/i18n.js?v=20261102e"></script>
+<script src="js/db.js?v=20261102e"></script>
+<script src="js/parse.js?v=20261102e"></script>
+<script src="js/stats.js?v=20261102e"></script>
+<script src="js/app.js?v=20261102e"></script>
 </body>
 </html>
