@@ -6,7 +6,7 @@
 <title>商品売上分析 | THD Sales Ledger</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261101e" />
+<link rel="stylesheet" href="css/style.css?v=20261102a" />
 </head>
 <body>
 
@@ -27,6 +27,10 @@
         <button class="tab-btn" data-view="calendar" role="tab" data-i18n="nav.calendar">季節カレンダー</button>
         <button class="tab-btn" data-view="notes" role="tab" data-i18n="nav.notes">メモ</button>
       </nav>
+      <div class="lang-toggle mode-toggle" role="group" aria-label="Display">
+        <button type="button" class="mode-btn" data-display="numbers" data-i18n="display.numbers">数値</button>
+        <button type="button" class="mode-btn" data-display="visual" data-i18n="display.visual">ビジュアル</button>
+      </div>
       <div class="lang-toggle" role="group" aria-label="Language">
         <button type="button" class="lang-btn is-active" data-lang="ja">日本語</button>
         <button type="button" class="lang-btn" data-lang="en">English</button>
@@ -121,7 +125,16 @@
         <p class="empty-title" data-i18n="products.noResultsTitle">条件に一致する商品がありません</p>
         <p class="empty-sub" data-i18n="products.noResultsSub">検索語を変えてみてください。</p>
       </div>
-      <div class="table-wrap products-wrap">
+      <div id="products-visual" class="only-visual">
+        <div class="card viz-card">
+          <h3><span data-i18n="vprod.mapHeading">商品マップ</span> <span class="muted" data-i18n="vprod.mapSub"></span></h3>
+          <div id="products-map"></div>
+          <div id="products-map-legend" class="viz-legend"></div>
+        </div>
+        <p class="muted-small viz-caption" data-i18n="vprod.tilesCaption"></p>
+        <div id="products-tiles" class="tile-grid"></div>
+      </div>
+      <div class="table-wrap products-wrap only-numbers">
         <table id="products-table">
           <thead>
             <tr>
@@ -159,12 +172,13 @@
           <h3 data-i18n="detail.judgement">判定</h3>
           <p id="detail-classification-badge" class="class-badge">—</p>
           <p id="detail-classification-text" class="class-text"></p>
-          <dl class="stat-row">
+          <div id="viz-class" class="viz-class only-visual"></div>
+          <dl class="stat-row only-numbers">
             <div><dt data-i18n="detail.eta2Label">η²（月要因の説明力）</dt><dd id="detail-eta2">—</dd></div>
             <div><dt data-i18n="detail.fValueLabel">F値（自由度）</dt><dd id="detail-fval">—</dd></div>
             <div><dt data-i18n="detail.spanLabel">データ期間</dt><dd id="detail-span">—</dd></div>
           </dl>
-          <div id="detail-reliability" class="reliability"></div>
+          <div id="detail-reliability" class="reliability only-numbers"></div>
         </div>
 
         <div class="card card-seasonal">
@@ -195,7 +209,8 @@
 
         <div class="card card-yoy">
           <h3 data-i18n="detail.yoyHeading">年別平均売上・前年比</h3>
-          <div class="table-wrap">
+          <div id="viz-yoy" class="only-visual"></div>
+          <div class="table-wrap only-numbers">
             <table id="yoy-table">
               <thead><tr>
                 <th data-i18n="detail.thYear">年</th><th data-i18n="detail.thAvgSales">月平均売上</th><th data-i18n="detail.thYoy">対前年比</th>
@@ -207,6 +222,7 @@
 
         <div class="card card-spikes">
           <h3><span data-i18n="detail.spikesHeading">スパイク上位</span> <span class="muted" data-i18n="detail.spikesSub">（対年平均比が高い順）</span></h3>
+          <div id="viz-spikes" class="only-visual"></div>
           <ol id="spike-list" class="spike-list"></ol>
         </div>
 
@@ -223,14 +239,16 @@
               <button type="button" class="trend-mode-btn buyer-range-btn" data-range="all" data-i18n="detail.trendAll">全期間</button>
             </div>
           </div>
-          <div id="buyer-summary" class="buyer-summary"></div>
+          <div id="buyer-summary" class="buyer-summary only-numbers"></div>
+          <div id="buyer-viz" class="buyer-viz only-visual"></div>
           <div id="buyer-chart" class="trend-chart"></div>
           <p class="muted-small buyer-def" data-i18n="buyers.definitions">店舗新規＝その月度に会員登録 / 商品初回＝既存会員がこのシリーズ（SKU）を初めて購入 / 継続＝前回購入から180日以内 / 復帰＝前回購入から180日超。再購入率＝その月度の購入者のうち次の6ヶ月度以内にまた買った割合（直近6ヶ月度はまだ判定できません）。</p>
         </div>
 
         <div class="card card-raw">
           <h3 data-i18n="detail.rawHeading">月別実績</h3>
-          <div class="table-wrap table-wrap-tall">
+          <div id="viz-raw" class="only-visual"></div>
+          <div class="table-wrap table-wrap-tall only-numbers">
             <table id="raw-table">
               <thead><tr>
                 <th data-i18n="detail.thRawYm">年月</th><th data-i18n="detail.thRawSales">売上金額</th>
@@ -266,7 +284,8 @@
     <section id="view-calendar" class="view">
       <div class="view-head">
         <h2 data-i18n="calendar.heading">季節カレンダー</h2>
-        <p class="hint" data-i18n="calendar.hint">全商品の月別季節指数を並べた一覧。η²が高い（季節性主導型）ほど濃く色付けしています（▲=平均超・▼=平均未満）。列見出しクリックで並び替え、▾アイコンで絞り込み（Excelのフィルターと同じ要領です）。</p>
+        <p class="hint only-visual" data-i18n="vcal.hint"></p>
+        <p class="hint only-numbers" data-i18n="calendar.hint">全商品の月別季節指数を並べた一覧。η²が高い（季節性主導型）ほど濃く色付けしています（▲=平均超・▼=平均未満）。列見出しクリックで並び替え、▾アイコンで絞り込み（Excelのフィルターと同じ要領です）。</p>
       </div>
 
       <div id="calendar-scope" class="scope-bar"></div>
@@ -286,7 +305,24 @@
         <p class="empty-title" data-i18n="calendar.noResultsTitle">条件に一致する商品がありません</p>
         <p class="empty-sub" data-i18n="calendar.noResultsSub">フィルター条件を変えてみてください。</p>
       </div>
-      <div class="table-wrap calendar-wrap">
+      <div id="calendar-visual" class="only-visual">
+        <div class="card viz-card">
+          <h3><span data-i18n="vcal.monthHeading">この月度に強い商品・弱い商品</span></h3>
+          <div id="vcal-months" class="month-picker"></div>
+          <p class="muted-small viz-caption" data-i18n="vcal.monthNote"></p>
+          <div class="vcal-split">
+            <div><h4 class="up" data-i18n="vcal.strong">強い</h4><div id="vcal-strong"></div></div>
+            <div><h4 class="down" data-i18n="vcal.weak">弱い</h4><div id="vcal-weak"></div></div>
+          </div>
+        </div>
+        <div class="card viz-card">
+          <h3><span data-i18n="vcal.mapHeading">季節マップ</span> <span class="muted" data-i18n="vcal.mapSub"></span></h3>
+          <div id="vcal-classes" class="scope-bar"></div>
+          <div id="vcal-map" class="smap"></div>
+          <div class="viz-legend heat-legend"><span data-i18n="vcal.legendLow">年平均より低い</span><i class="heat-scale"></i><span data-i18n="vcal.legendHigh">年平均より高い</span><span class="smap-peak-key" data-i18n="vcal.legendPeak">枠＝ピーク月度</span></div>
+        </div>
+      </div>
+      <div class="table-wrap calendar-wrap only-numbers">
         <table id="calendar-table">
           <colgroup>
             <col class="col-name" />
@@ -375,10 +411,10 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="js/i18n.js?v=20261101e"></script>
-<script src="js/db.js?v=20261101e"></script>
-<script src="js/parse.js?v=20261101e"></script>
-<script src="js/stats.js?v=20261101e"></script>
-<script src="js/app.js?v=20261101e"></script>
+<script src="js/i18n.js?v=20261102a"></script>
+<script src="js/db.js?v=20261102a"></script>
+<script src="js/parse.js?v=20261102a"></script>
+<script src="js/stats.js?v=20261102a"></script>
+<script src="js/app.js?v=20261102a"></script>
 </body>
 </html>

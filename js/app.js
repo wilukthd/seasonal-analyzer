@@ -285,6 +285,10 @@ function showFatalError(detail) {
         eta2Text: fmtOmega(analysis),
         stale: isActive(p) && monthsBehind(last.ymKey) >= 2,
         staleBehind: monthsBehind(last.ymKey),
+        rows: p.rows,
+        seasonal: analysis.seasonal,
+        tentative: !analysis.sufficiency.ok,
+        growth: growthOf(p.rows, from12),
       };
     });
 
@@ -328,6 +332,7 @@ function showFatalError(detail) {
       tr.addEventListener('click', () => openProductDetail(p.name));
       tbody.appendChild(tr);
     });
+    if (isVisual()) renderProductsVisual(filtered, latestYm(products));
   }
 
   document.getElementById('prod-search').addEventListener('input', (e) => {
@@ -379,12 +384,16 @@ function showFatalError(detail) {
     document.getElementById('detail-fval').textContent = analysis.sufficiency.ok ? fmtP(analysis.test.p) : '—';
     document.getElementById('detail-span').textContent = t('detail.monthsUnit', view.rows.length);
     renderReliability(analysis);
+    renderClassViz(analysis);
 
     renderSeasonalBars(analysis);
     renderYoyTable(analysis.yoy);
+    renderYoyViz(analysis.yoy);
     renderSpikeList('spike-list', analysis.spikes, true, true);
     renderSpikeList('dip-list', analysis.dips, false, false);
+    renderSpikeTimeline(view.rows, analysis);
     renderRawTable(view.rows);
+    renderRawViz(view.rows, analysis);
     renderSkuTable(record);
     renderBuyers(view);
     initTrendSection(view.rows, record.name);
@@ -495,40 +504,50 @@ function showFatalError(detail) {
     document.getElementById('buyer-sub').textContent = view.selection
       ? (view.selection.single ? t('buyers.subSku', view.selection.codes[0]) : '')
       : t('buyers.subSeries');
-    if (view.selection && !view.selection.single) {
-      summary.innerHTML = `<p class="is-weak">${escapeHtml(t('buyers.multiSku'))}</p>`;
-      chart.innerHTML = '';
-      return;
-    }
-    if (!rows.length) {
-      summary.innerHTML = `<p class="is-weak">${escapeHtml(t('buyers.none'))}</p>`;
+    const vizBox = document.getElementById('buyer-viz');
+    const noData = view.selection && !view.selection.single ? 'buyers.multiSku' : (!rows.length ? 'buyers.none' : null);
+    if (noData) {
+      summary.innerHTML = vizBox.innerHTML = `<p class="is-weak">${escapeHtml(t(noData))}</p>`;
       chart.innerHTML = '';
       return;
     }
     summary.innerHTML = buyerSummary(rows).map((x) => `<p class="${x.warn ? 'buyer-warn' : ''}">${escapeHtml(x.text)}</p>`).join('');
+    renderBuyerViz(rows);
     renderBuyerChart(chart, buyerRange === 'all' ? rows : rows.filter((r) => r.ymKey >= shiftYm(rows[rows.length - 1].ymKey, -35)));
   }
 
-  function buyerSummary(rows) {
+  // Last 12 月度 against the 12 before: buyer mix, 6-月度 repurchase, and the warnings.
+  function buyerStats(rows) {
     const last = rows[rows.length - 1].ymKey;
     const win = (a, b) => rows.filter((r) => r.ymKey > shiftYm(last, a) && r.ymKey <= shiftYm(last, b));
     const tot = (rs) => [0, 1, 2, 3].map((i) => rs.reduce((s, r) => s + r.buyers[i], 0));
     const cur = tot(win(-12, 0)), prev = tot(win(-24, -12));
     const n = cur.reduce((s, v) => s + v, 0), pn = prev.reduce((s, v) => s + v, 0);
     const nc = cur[0] + cur[1] + cur[3], pnc = prev[0] + prev[1] + prev[3];
-    const out = [{ text: t('buyers.sum12', fmtInt(n), pn ? fmtInt(pn) : '—', pn ? fmtSignedPct(n / pn - 1, 0) : '—',
-      n ? fmtPct(cur[2] / n, 0) : '—', fmtInt(nc), fmtInt(cur[0]), fmtInt(cur[1]), fmtInt(cur[3])) }];
     const mature = rows.filter((r) => r.buyers[4] != null);
+    let rc = null, rp = null;
     if (mature.length) {
       const ml = mature[mature.length - 1].ymKey;
-      const rc = repeatRates(mature.filter((r) => r.ymKey > shiftYm(ml, -12)));
-      const rp = repeatRates(mature.filter((r) => r.ymKey > shiftYm(ml, -24) && r.ymKey <= shiftYm(ml, -12)));
-      const f = (v) => (v == null ? '—' : fmtPct(v, 0));
-      out.push({ text: t('buyers.repeat', rc.from, rc.to, f(rc.all), f(rc.newc), f(rp.all), f(rp.newc)) });
-      if (rc.newc != null && rp.newc != null && rc.newc < rp.newc - 0.1) out.push({ warn: true, text: t('buyers.warnStick') });
+      rc = repeatRates(mature.filter((r) => r.ymKey > shiftYm(ml, -12)));
+      rp = repeatRates(mature.filter((r) => r.ymKey > shiftYm(ml, -24) && r.ymKey <= shiftYm(ml, -12)));
     }
-    if (pn && n < pn * 0.85 && n && nc / n < 0.15) out.push({ warn: true, text: t('buyers.warnShrinking') });
-    if (pnc >= 10 && nc >= pnc * 1.5) out.push({ text: t('buyers.noteInflow', (nc / pnc).toFixed(1)) });
+    const warns = [];
+    if (rc && rc.newc != null && rp.newc != null && rc.newc < rp.newc - 0.1) warns.push('warnStick');
+    if (pn && n < pn * 0.85 && n && nc / n < 0.15) warns.push('warnShrinking');
+    const inflow = pnc >= 10 && nc >= pnc * 1.5 ? nc / pnc : null;
+    return { cur, prev, n, pn, nc, rc, rp, warns, inflow };
+  }
+
+  function buyerSummary(rows) {
+    const s = buyerStats(rows);
+    const out = [{ text: t('buyers.sum12', fmtInt(s.n), s.pn ? fmtInt(s.pn) : '—', s.pn ? fmtSignedPct(s.n / s.pn - 1, 0) : '—',
+      s.n ? fmtPct(s.cur[2] / s.n, 0) : '—', fmtInt(s.nc), fmtInt(s.cur[0]), fmtInt(s.cur[1]), fmtInt(s.cur[3])) }];
+    if (s.rc) {
+      const f = (v) => (v == null ? '—' : fmtPct(v, 0));
+      out.push({ text: t('buyers.repeat', s.rc.from, s.rc.to, f(s.rc.all), f(s.rc.newc), f(s.rp.all), f(s.rp.newc)) });
+    }
+    s.warns.forEach((w) => out.push({ warn: true, text: t('buyers.' + w) }));
+    if (s.inflow) out.push({ text: t('buyers.noteInflow', s.inflow.toFixed(1)) });
     return out;
   }
 
@@ -619,7 +638,12 @@ function showFatalError(detail) {
       sales12: s.rows.reduce((sum, r) => (r[0] >= from12 ? sum + r[1] : sum), 0),
       total: s.rows.reduce((sum, r) => sum + r[1], 0),
       last: s.rows.reduce((m, r) => (r[0] > m ? r[0] : m), ''),
+      src: s,
     })).sort((a, b) => (b.sales12 - a.sales12) || (b.total - a.total));
+    const vis = isVisual();
+    const max12 = Math.max(...rows.map((r) => r.sales12), 1);
+    const lastYm = record.rows[record.rows.length - 1].ymKey;
+    document.querySelector('#sku-table [data-i18n="detail.thSkuTotal"]').textContent = vis ? t('vdet.skuTrend') : t('detail.thSkuTotal');
     document.getElementById('sku-count').textContent = t('detail.skuCount', rows.length, rows.filter((r) => r.active).length);
     const isOn = (code) => !skuSelection || skuSelection.has(code);
     const allBox = document.getElementById('sku-all');
@@ -634,8 +658,8 @@ function showFatalError(detail) {
         <td class="sku-check-cell"><input type="checkbox" data-code="${escapeHtml(r.code)}" ${isOn(r.code) ? 'checked' : ''}></td>
         <td class="mono-cell">${escapeHtml(r.code)} <button type="button" class="sku-only" data-code="${escapeHtml(r.code)}">${escapeHtml(t('sel.only'))}</button></td>
         <td>${escapeHtml(r.name)}${r.active ? '' : ` <span class="class-tag ended-tag">${escapeHtml(t('products.endedTag'))}</span>`}</td>
-        <td class="pct-cell">${r.sales12 ? fmtYen(r.sales12) : '—'}</td>
-        <td class="pct-cell">${fmtYen(r.total)}</td>
+        <td class="pct-cell">${vis ? cellBar(r.sales12, max12) : (r.sales12 ? fmtYen(r.sales12) : '—')}</td>
+        <td class="pct-cell${vis ? ' spark-cell' : ''}">${vis ? sparkline(r.src.rows.map((x) => ({ ymKey: x[0], sales: x[1] })), lastYm, 36, 160, 26) : fmtYen(r.total)}</td>
         <td class="pct-cell">${r.last}</td>
       </tr>`).join('');
     tbody.querySelectorAll('input[data-code]').forEach((cb) => cb.addEventListener('change', () => {
@@ -661,12 +685,7 @@ function showFatalError(detail) {
       [t('rel.weight'), fmtPct(a.weight, 0)],
       [t('rel.spikes'), t('rel.spikesVal', a.spikeCount)],
     ];
-    let reason;
-    if (!s.ok) reason = t('rel.reasonInsufficient', C.minMonths, C.minPerMonth);
-    else if (a.test.p == null) reason = t('rel.reasonNoTest');
-    else if (a.test.p < C.alpha) reason = t('rel.reasonSeasonal', fmtP(a.test.p), fmtOmega(a));
-    else reason = t('rel.reasonNotSeasonal', fmtP(a.test.p));
-    if (a.spiky && s.ok) reason += ' ' + t('rel.reasonSpiky', a.spikeCount, s.years);
+    const reason = reliabilityReason(a);
     const box = document.getElementById('detail-reliability');
     box.classList.toggle('is-weak', !s.ok);
     box.innerHTML = `
@@ -674,6 +693,17 @@ function showFatalError(detail) {
       <dl class="stat-row">${rows.map(([k, v]) => `<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd></div>`).join('')}</dl>
       <p class="rel-reason">${escapeHtml(reason)}</p>
     `;
+  }
+
+  function reliabilityReason(a) {
+    const s = a.sufficiency, C = SalesStats.CONFIG;
+    let reason;
+    if (!s.ok) reason = t('rel.reasonInsufficient', C.minMonths, C.minPerMonth);
+    else if (a.test.p == null) reason = t('rel.reasonNoTest');
+    else if (a.test.p < C.alpha) reason = t('rel.reasonSeasonal', fmtP(a.test.p), fmtOmega(a));
+    else reason = t('rel.reasonNotSeasonal', fmtP(a.test.p));
+    if (a.spiky && s.ok) reason += ' ' + t('rel.reasonSpiky', a.spikeCount, s.years);
+    return reason;
   }
 
   let seasonAnalysis = null;
@@ -867,27 +897,31 @@ function showFatalError(detail) {
     const list = document.getElementById(elId);
     list.innerHTML = '';
     const viewRows = currentView ? currentView.rows : [];
-    items.forEach((r) => {
+    const vis = isVisual();
+    items.forEach((r, i) => {
       const li = document.createElement('li');
       li.className = 'spike-item';
+      li.dataset.ym = r.ymKey;
       const driver = withFactor ? buyerDriver(viewRows, r) : null;
 
       const main = document.createElement('div');
       main.className = 'spike-item-main';
       main.innerHTML = `
         <div>
-          <div class="ym">${r.ymKey}</div>
+          <div class="ym">${vis ? (withFactor ? `<span class="spike-no">${i + 1}</span>` : '<span class="dip-no">▼</span>') : ''}${r.ymKey}</div>
           ${withFactor && !driver ? `<div class="factor">${escapeHtml(factorLabel(r.factorKey))}</div>` : ''}
         </div>
         <div class="ratio ${r.ratio >= 1 ? 'up' : 'down'}">${fmtPct(r.ratio, 0)}</div>
       `;
       li.appendChild(main);
 
-      if (driver) li.appendChild(buyerDriverEl(driver));
+      if (driver) li.appendChild(vis ? buyerDriverViz(driver) : buyerDriverEl(driver));
 
       if (withFactor && currentView && currentView.skus && currentView.skus.length > 1) {
         const drivers = topSkusFor(currentView, r.ymKey, 3);
-        if (drivers.length) {
+        if (drivers.length && vis) {
+          li.appendChild(skuShareViz(drivers));
+        } else if (drivers.length) {
           const p = document.createElement('p');
           p.className = 'spike-skus';
           p.textContent = t('detail.spikeSkus') + ' ' + drivers
@@ -1170,11 +1204,13 @@ function showFatalError(detail) {
     renderScopeBar(scopeBar, products, renderCalendar);
     ensureContext(products);
 
+    const from12 = shiftYm(latestYm(products), -11);
     const computed = products.filter(inScope).map((p) => {
       const analysis = analysisOf(p);
       const peak = analysis.seasonal.reduce((a, b) => (seasonValue(b) > seasonValue(a) ? b : a));
       return {
         name: p.name,
+        growth: growthOf(p.rows, from12),
         seasonal: analysis.seasonal,
         classification: analysis.classification,
         tentative: !analysis.sufficiency.ok,
@@ -1191,6 +1227,8 @@ function showFatalError(detail) {
     noResults.hidden = filtered.length > 0;
     filtered.forEach((c) => tbody.appendChild(buildCalendarRow(c)));
     updateCalendarSortIndicators();
+    // the visual view has its own 判定 chips, so only the name filter carries over
+    if (isVisual()) renderCalendarVisual(computed.filter((c) => !calendarColumnFilters.name || calendarColumnFilters.name.has(c.name)));
   }
 
   function calHeaderLabel(key) {
@@ -1254,12 +1292,17 @@ function showFatalError(detail) {
   // for red-green color blindness.
   const HEAT_LOW = '#B4483C';   // strong red, below-average months
   const HEAT_HIGH = '#1F7A5C';  // strong green, above-average months
+  function heatBg(index) {
+    if (index == null) return null;
+    const k = Math.max(-1, Math.min(1, (index - 1) / 0.5)); // ±50% = full saturation
+    if (Math.abs(k) < 0.04) return null; // essentially 100%, leave neutral
+    return k < 0 ? mixHex('#FFFFFF', HEAT_LOW, -k) : mixHex('#FFFFFF', HEAT_HIGH, k);
+  }
+
   function pctColor(index) {
-    if (index == null) return '';
-    const t = Math.max(-1, Math.min(1, (index - 1) / 0.5)); // ±50% = full saturation
-    if (Math.abs(t) < 0.04) return 'style="color:var(--ink);"'; // essentially 100%, leave neutral
-    const bg = t < 0 ? mixHex('#FFFFFF', HEAT_LOW, -t) : mixHex('#FFFFFF', HEAT_HIGH, t);
-    const textColor = Math.abs(t) > 0.55 ? '#FFFFFF' : 'var(--ink)';
+    const bg = heatBg(index);
+    if (!bg) return index == null ? '' : 'style="color:var(--ink);"';
+    const textColor = Math.abs((index - 1) / 0.5) > 0.55 ? '#FFFFFF' : 'var(--ink)';
     return `style="background:${bg}; color:${textColor}; font-weight:700;"`;
   }
 
@@ -1407,6 +1450,408 @@ function showFatalError(detail) {
       openColumnFilter(btn.dataset.filterCol, btn);
     });
   });
+
+  // ---------------- display mode: 数値 / ビジュアル ----------------
+  // Visual mode swaps tables and number lists for charts. Both read the same analysis;
+  // the visual pieces are only built while visual mode is on.
+  const DISPLAY_KEY = 'thd-sales-ledger-display';
+  let displayMode = (() => {
+    try { return localStorage.getItem(DISPLAY_KEY) === 'visual' ? 'visual' : 'numbers'; } catch (e) { return 'numbers'; }
+  })();
+  function isVisual() { return displayMode === 'visual'; }
+  function applyDisplayMode() {
+    document.body.classList.toggle('is-visual', isVisual());
+    document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.display === displayMode));
+  }
+  applyDisplayMode();
+  document.querySelectorAll('.mode-btn').forEach((btn) => btn.addEventListener('click', () => {
+    if (btn.dataset.display === displayMode) return;
+    displayMode = btn.dataset.display;
+    try { localStorage.setItem(DISPLAY_KEY, displayMode); } catch (e) { /* ignore */ }
+    applyDisplayMode();
+    const active = document.querySelector('.view.is-active').id;
+    if (active === 'view-products') renderProductsList();
+    else if (active === 'view-calendar') renderCalendar();
+    else if (active === 'view-detail' && currentProduct) renderProductDetailContent(currentProduct);
+  }));
+
+  // Last 12 月度 against the 12 before; null when there were no sales a year earlier.
+  function growthOf(rows, from12) {
+    const cur = sumSince(rows, from12);
+    const prev = sumSince(rows, shiftYm(from12, -12)) - cur;
+    return prev > 0 ? cur / prev - 1 : null;
+  }
+  function growthChip(g) {
+    if (g == null) return `<span class="g-chip" title="${escapeHtml(t('vprod.noPrev'))}">—</span>`;
+    const cls = g >= 0.1 ? ' is-up' : (g <= -0.1 ? ' is-down' : '');
+    return `<span class="g-chip${cls}" title="${escapeHtml(t('viz.growthTip'))}">${g >= 0 ? '▲' : '▼'} ${fmtPct(Math.abs(g), 0)}</span>`;
+  }
+  function cellBar(v, max) {
+    return `<span class="cell-bar"><i style="width:${(Math.max(0, v) / max * 100).toFixed(1)}%"></i><em>${v ? fmtCompactYen(v) : '—'}</em></span>`;
+  }
+  function seasonStrip(seasonal, tentative) {
+    return `<span class="season-strip${tentative ? ' is-tentative' : ''}">${seasonal.map((s) => {
+      const v = seasonValue(s);
+      const bg = tentative ? null : heatBg(v);
+      return `<i style="background:${bg || 'var(--line-soft)'}" title="${escapeHtml(monthLabel(s.month) + ' ' + fmtPct(v, 0))}"></i>`;
+    }).join('')}</span>`;
+  }
+
+  // Sales for the `months` 月度 ending at lastYm (missing = 0); the last 12 are drawn in colour.
+  function sparkline(rows, lastYm, months, w, h) {
+    const from = shiftYm(lastYm, -(months - 1));
+    const by = new Map(rows.map((r) => [r.ymKey, r.sales]));
+    const vals = Array.from({ length: months }, (_, i) => Math.max(0, by.get(shiftYm(from, i)) || 0));
+    const max = Math.max(...vals, 1);
+    const pt = (v, i) => `${((i / (months - 1)) * w).toFixed(1)},${(h - 2 - (v / max) * (h - 4)).toFixed(1)}`;
+    const cut = Math.max(0, months - 12);
+    const xCut = (cut / (months - 1)) * w;
+    const older = vals.slice(0, cut + 1).map((v, i) => pt(v, i)).join(' ');
+    const recent = vals.slice(cut).map((v, i) => pt(v, i + cut)).join(' ');
+    return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" height="${h}">
+      <rect x="${xCut.toFixed(1)}" y="0" width="${(w - xCut).toFixed(1)}" height="${h}" fill="var(--seasonal-bg)"></rect>
+      <polyline points="${older}" fill="none" stroke="var(--ink-soft)" stroke-width="1.2" vector-effect="non-scaling-stroke"></polyline>
+      <polyline points="${recent}" fill="none" stroke="var(--seasonal)" stroke-width="2" vector-effect="non-scaling-stroke"></polyline>
+    </svg>`;
+  }
+
+  // ---- products: map + tiles ----
+  function renderProductsVisual(items, lastYm) {
+    renderProductMap(document.getElementById('products-map'), items);
+    const tiles = document.getElementById('products-tiles');
+    tiles.innerHTML = items.map((p) => `
+      <div class="tile" role="button" tabindex="0" data-name="${escapeHtml(p.name)}">
+        <div class="tile-head">
+          <span class="tile-name">${escapeHtml(p.name)}</span>
+          <span class="class-tag" style="background:var(--${p.classification.key}-bg); color:var(--${p.classification.key});">${escapeHtml(clsLabel(p.classification.key))}</span>
+        </div>
+        <div class="tile-nums"><b>${p.sales12 ? fmtCompactYen(p.sales12) : '—'}</b>${growthChip(p.growth)}${p.active ? '' : `<span class="class-tag ended-tag">${escapeHtml(t('products.endedTag'))}</span>`}</div>
+        ${sparkline(p.rows, lastYm, 36, 240, 38)}
+        ${seasonStrip(p.seasonal, p.tentative)}
+      </div>`).join('');
+    tiles.querySelectorAll('.tile').forEach((el) => {
+      el.addEventListener('click', () => openProductDetail(el.dataset.name));
+      el.addEventListener('keydown', (e) => { if (e.key === 'Enter') openProductDetail(el.dataset.name); });
+    });
+  }
+
+  // Round powers of ten for a log axis: ¥1,000 / 1万円 / 1億円 (¥1K / ¥1M in English).
+  function axisYen(n) {
+    if (I18N.getLang() === 'en') return n >= 1e6 ? '¥' + n / 1e6 + 'M' : (n >= 1e3 ? '¥' + n / 1e3 + 'K' : '¥' + n);
+    return n >= 1e8 ? n / 1e8 + '億円' : (n >= 1e4 ? n / 1e4 + '万円' : '¥' + n.toLocaleString('ja-JP'));
+  }
+
+  // x = last-12 sales (log), y = last 12 ÷ the 12 before (log2, clipped at ¼× and 4×).
+  function renderProductMap(container, items) {
+    const legend = document.getElementById('products-map-legend');
+    const pts = items.filter((p) => p.sales12 > 0);
+    if (!pts.length) { container.innerHTML = ''; legend.innerHTML = ''; return; }
+    const W = 1000, H = 430, padL = 58, padR = 16, padT = 14, padB = 30;
+    const lx = pts.map((p) => Math.log10(p.sales12));
+    const x0 = Math.floor(Math.min(...lx)), x1 = Math.max(x0 + 1, Math.ceil(Math.max(...lx)));
+    const X = (v) => padL + ((Math.log10(v) - x0) / (x1 - x0)) * (W - padL - padR);
+    const G = 2;
+    const lg = (g) => (g == null ? G : Math.max(-G, Math.min(G, Math.log2(Math.max(1e-9, 1 + g)))));
+    const Y = (l) => padT + ((G - l) / (2 * G)) * (H - padT - padB);
+    let grid = '';
+    for (let k = x0; k <= x1; k++) {
+      const x = X(10 ** k).toFixed(1);
+      grid += `<line x1="${x}" x2="${x}" y1="${padT}" y2="${H - padB}" stroke="var(--line-soft)"></line>
+        <text x="${x}" y="${H - 10}" font-size="11" fill="var(--ink-soft)" text-anchor="middle">${axisYen(10 ** k)}</text>`;
+    }
+    [-2, -1, 0, 1, 2].forEach((l) => {
+      const y = Y(l).toFixed(1);
+      grid += `<line x1="${padL}" x2="${W - padR}" y1="${y}" y2="${y}" stroke="${l === 0 ? 'var(--ink-soft)' : 'var(--line)'}"${l === 0 ? '' : ' stroke-dasharray="3 3"'}></line>
+        <text x="${padL - 6}" y="${(+y + 4).toFixed(1)}" font-size="11" fill="var(--ink-soft)" text-anchor="end">${l === 0 ? '±0%' : fmtSignedPct(2 ** l - 1, 0)}</text>`;
+    });
+    const zones = `<rect x="${padL}" y="${padT}" width="${W - padL - padR}" height="${(Y(0) - padT).toFixed(1)}" fill="var(--seasonal-bg)" opacity="0.6"></rect>
+      <rect x="${padL}" y="${Y(0).toFixed(1)}" width="${W - padL - padR}" height="${(H - padB - Y(0)).toFixed(1)}" fill="#FBEDEB" opacity="0.6"></rect>
+      <text x="${padL + 8}" y="${padT + 15}" font-size="12" font-weight="700" fill="var(--seasonal)">${escapeHtml(t('vprod.up'))}</text>
+      <text x="${padL + 8}" y="${H - padB - 8}" font-size="12" font-weight="700" fill="var(--danger)">${escapeHtml(t('vprod.down'))}</text>`;
+    const bySize = [...pts].sort((a, b) => b.sales12 - a.sales12);
+    const dots = bySize.map((p) => {   // biggest first, so small dots stay on top
+      const col = `var(--${p.classification.key})`;
+      const x = X(p.sales12), y = Y(lg(p.growth));
+      const tip = t('vprod.tip', p.name, fmtCompactYen(p.sales12), p.growth == null ? t('vprod.noPrev') : fmtSignedPct(p.growth, 0), clsLabel(p.classification.key));
+      const shape = p.growth == null
+        ? `<path d="M${x.toFixed(1)},${(y - 6).toFixed(1)} L${(x + 6).toFixed(1)},${(y + 5).toFixed(1)} L${(x - 6).toFixed(1)},${(y + 5).toFixed(1)} Z" fill="${col}"></path>`
+        : `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5.5" fill="${p.active ? col : 'var(--surface)'}" fill-opacity="0.85" stroke="${col}" stroke-width="1.6"></circle>`;
+      return `<g class="map-dot" data-name="${escapeHtml(p.name)}"><title>${escapeHtml(tip)}</title>${shape}</g>`;
+    }).join('');
+    // names for the biggest series, skipping any that would overlap one already placed
+    const placed = [];
+    const labels = bySize.slice(0, 20).map((p) => {
+      const x = X(p.sales12), y = Y(lg(p.growth));
+      const right = x < W - 180;
+      const box = { a: right ? x + 8 : x - 168, b: right ? x + 168 : x - 8, y };
+      if (placed.some((q) => Math.abs(q.y - y) < 13 && box.a < q.b && q.a < box.b)) return '';
+      placed.push(box);
+      return `<text class="map-label" x="${(right ? x + 8 : x - 8).toFixed(1)}" y="${(y + 4).toFixed(1)}" font-size="11" text-anchor="${right ? 'start' : 'end'}">${escapeHtml(p.name)}</text>`;
+    }).join('');
+    container.innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="trend-svg map-svg" preserveAspectRatio="xMidYMid meet">${zones}${grid}${dots}${labels}</svg>`;
+    container.querySelectorAll('.map-dot').forEach((g) => g.addEventListener('click', () => openProductDetail(g.dataset.name)));
+    const keys = ['seasonal', 'seasonal-spiky', 'spiky', 'stable', 'insufficient'].filter((k) => pts.some((p) => p.classification.key === k));
+    legend.innerHTML = keys.map((k) => `<span><i style="background:var(--${k})"></i>${escapeHtml(clsLabel(k))}</span>`).join('')
+      + `<span>${escapeHtml(t('vprod.legendShapes'))}</span>`;
+  }
+
+  // ---- calendar: strong / weak for one 月度, and the season map ----
+  let vcalMonth = (() => {
+    const d = new Date();
+    const cur = d.getMonth() + 1 + (d.getDate() >= 21 ? 1 : 0);   // this 月度 (13 = next January)
+    return (cur % 12) + 1;                                           // the 月度 after it
+  })();
+  const vcalClasses = new Set(['seasonal', 'seasonal-spiky']);
+  let vcalItems = [];
+
+  function renderCalendarVisual(items) {
+    vcalItems = items;
+    const at = (c) => seasonValue(c.seasonal[vcalMonth - 1]);
+    const picker = document.getElementById('vcal-months');
+    picker.innerHTML = Array.from({ length: 12 }, (_, i) => i + 1).map((m) =>
+      `<button type="button" class="month-btn${m === vcalMonth ? ' is-active' : ''}" data-m="${m}">${escapeHtml(monthLabel(m))}</button>`).join('');
+    picker.querySelectorAll('.month-btn').forEach((b) => b.addEventListener('click', () => {
+      vcalMonth = Number(b.dataset.m);
+      renderCalendarVisual(vcalItems);
+    }));
+    // only series with a seasonal verdict: elsewhere the 月度 differences are noise
+    const pool = items.filter((c) => !c.tentative && (c.classification.key === 'seasonal' || c.classification.key === 'seasonal-spiky'));
+    const strong = pool.filter((c) => at(c) > 1.02).sort((a, b) => at(b) - at(a)).slice(0, 15);
+    const weak = pool.filter((c) => at(c) < 0.98).sort((a, b) => at(a) - at(b)).slice(0, 10);
+    const maxDev = Math.max(0.2, ...[...strong, ...weak].map((c) => Math.abs(at(c) - 1)));
+    const list = (arr, up) => (arr.length ? arr.map((c) => {
+      const v = at(c);
+      return `<div class="dv-row" data-name="${escapeHtml(c.name)}" title="${escapeHtml(t('vcal.rowTip', c.name, monthLabel(vcalMonth), fmtPct(v, 0)))}">
+        <span class="dv-name">${escapeHtml(c.name)}</span>
+        <span class="dv-bar"><i class="${up ? 'is-up' : 'is-down'}" style="width:${(Math.abs(v - 1) / maxDev * 100).toFixed(1)}%"></i></span>
+        <span class="dv-val ${up ? 'up' : 'down'}">${fmtSignedPct(v - 1, 0)}</span>
+        ${growthChip(c.growth)}
+      </div>`;
+    }).join('') : `<p class="muted-small">${escapeHtml(t('vcal.none'))}</p>`);
+    document.getElementById('vcal-strong').innerHTML = list(strong, true);
+    document.getElementById('vcal-weak').innerHTML = list(weak, false);
+    renderSeasonMap(items);
+    document.querySelectorAll('#calendar-visual [data-name]').forEach((el) => el.addEventListener('click', () => openProductDetail(el.dataset.name)));
+  }
+
+  function renderSeasonMap(items) {
+    const chips = document.getElementById('vcal-classes');
+    const counts = new Map();
+    items.forEach((c) => counts.set(c.classification.key, (counts.get(c.classification.key) || 0) + 1));
+    chips.innerHTML = `<span class="scope-label">${escapeHtml(t('vcal.classes'))}</span>`
+      + ['seasonal', 'seasonal-spiky', 'spiky', 'stable', 'insufficient'].filter((k) => counts.has(k)).map((k) => `
+        <label class="scope-chip${vcalClasses.has(k) ? ' is-on' : ''}"><input type="checkbox" value="${k}" ${vcalClasses.has(k) ? 'checked' : ''} />
+          ${escapeHtml(clsLabel(k))} <span class="scope-n">${counts.get(k)}</span></label>`).join('');
+    chips.querySelectorAll('input').forEach((box) => box.addEventListener('change', () => {
+      if (box.checked) vcalClasses.add(box.value); else vcalClasses.delete(box.value);
+      renderCalendarVisual(vcalItems);
+    }));
+    const cells = (seasonal, peak, tentative) => seasonal.map((s) => {
+      const v = seasonValue(s);
+      const bg = tentative ? null : heatBg(v);
+      return `<i class="${s.month === peak ? 'is-peak' : ''}" style="background:${bg || 'var(--line-soft)'}" title="${escapeHtml(monthLabel(s.month) + ' ' + fmtPct(v, 0))}"></i>`;
+    }).join('');
+    const head = `<div class="smap-row smap-head"><span class="smap-name"></span><span class="smap-cells">${
+      Array.from({ length: 12 }, (_, i) => `<b>${escapeHtml(monthLabel(i + 1))}</b>`).join('')}</span></div>`;
+    let shop = '';
+    if (seasonMode === 'absolute' && analysisCtx) {
+      const ss = analysisCtx.mu.map((m, i) => ({ month: i + 1, index: Math.exp(m), relative: 1 }));
+      const peak = ss.reduce((a, b) => (b.index > a.index ? b : a)).month;
+      shop = `<div class="smap-row smap-shop"><span class="smap-name">${escapeHtml(t('vcal.shop'))}</span><span class="smap-cells">${cells(ss, peak, false)}</span></div>`;
+    }
+    const shown = items.filter((c) => vcalClasses.has(c.classification.key));
+    const groups = Array.from({ length: 12 }, () => []);
+    shown.forEach((c) => groups[c.peakMonth - 1].push(c));
+    const body = groups.map((g, i) => {
+      if (!g.length) return '';
+      g.sort((a, b) => seasonValue(b.seasonal[i]) - seasonValue(a.seasonal[i]));
+      return `<div class="smap-group">${escapeHtml(t('vcal.peakGroup', monthLabel(i + 1), g.length))}</div>`
+        + g.map((c) => `<div class="smap-row" data-name="${escapeHtml(c.name)}"><span class="smap-name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</span><span class="smap-cells">${cells(c.seasonal, c.peakMonth, c.tentative)}</span></div>`).join('');
+    }).join('');
+    document.getElementById('vcal-map').innerHTML = shown.length ? head + shop + body : `<p class="muted-small">${escapeHtml(t('vcal.none'))}</p>`;
+  }
+
+  // ---- detail: verdict card ----
+  function renderClassViz(a) {
+    const box = document.getElementById('viz-class');
+    if (!isVisual()) { box.innerHTML = ''; return; }
+    const s = a.sufficiency, C = SalesStats.CONFIG;
+    const om = omegaOf(a);
+    const p = s.ok ? a.test.p : null;
+    const meter = (label, value, track, left, right) => `
+      <div class="meter">
+        <div class="meter-head"><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>
+        <div class="meter-track">${track}</div>
+        <div class="meter-scale"><span>${escapeHtml(left)}</span><span>${escapeHtml(right)}</span></div>
+      </div>`;
+    let html = meter(t('vdet.omega'), om == null ? '—' : fmtPct(om, 0),
+      `<i class="meter-fill" style="width:${om == null ? 0 : Math.min(100, om * 100).toFixed(1)}%"></i>`, t('vdet.omegaLow'), t('vdet.omegaHigh'));
+    if (p != null) {
+      // p on a log scale from the smallest a permutation test can give, up to 1
+      const pMin = 1 / (C.permutations + 1);
+      const pos = (v) => (Math.log(Math.max(v, pMin) / pMin) / Math.log(1 / pMin) * 100).toFixed(1);
+      html += meter(t('vdet.p'), fmtP(p),
+        `<span class="meter-zone" style="width:${pos(C.alpha)}%"></span><em class="meter-cut" style="left:${pos(C.alpha)}%"></em><i class="meter-dot${p < C.alpha ? ' is-sig' : ''}" style="left:${pos(p)}%"></i>`,
+        t('vdet.pSure'), t('vdet.pChance'));
+    }
+    const scaleMax = Math.max(s.months, C.minMonths * 2);
+    html += meter(t('rel.months'), t('vdet.monthsVal', s.months),
+      `<i class="meter-fill is-grey" style="width:${(s.months / scaleMax * 100).toFixed(1)}%"></i><em class="meter-cut" style="left:${(C.minMonths / scaleMax * 100).toFixed(1)}%" title="${C.minMonths}"></em>`,
+      '0', t('vdet.monthsNeed', C.minMonths));
+    html += meter(t('rel.weight'), fmtPct(a.weight, 0),
+      `<i class="meter-fill is-grey" style="width:${(a.weight * 100).toFixed(1)}%"></i>`, t('vdet.weightLow'), t('vdet.weightHigh'));
+    const maxN = Math.max(...a.seasonal.map((x) => x.n), C.minPerMonth + 1);
+    html += `<div class="nbars-wrap"><div class="meter-head"><span>${escapeHtml(t('vdet.nHeading', C.minPerMonth))}</span></div>
+      <div class="nbars"><em class="nbars-cut" style="bottom:${(C.minPerMonth / maxN * 100).toFixed(1)}%"></em>${a.seasonal.map((x) => `
+        <div class="nbar${x.n < C.minPerMonth ? ' is-short' : ''}" title="${escapeHtml(monthLabel(x.month))}: ${x.n}"><i style="height:${(x.n / maxN * 100).toFixed(1)}%"></i><span>${x.month}</span></div>`).join('')}</div></div>`;
+    html += `<p class="rel-reason${s.ok ? '' : ' is-weak'}">${escapeHtml(reliabilityReason(a))}</p>`;
+    box.innerHTML = html;
+  }
+
+  // ---- detail: average monthly sales per year ----
+  function renderYoyViz(yoy) {
+    const box = document.getElementById('viz-yoy');
+    if (!isVisual() || !yoy.length) { box.innerHTML = ''; return; }
+    const W = 520, H = 210, padT = 26, padB = 30, padX = 6;
+    const max = Math.max(...yoy.map((y) => y.avg), 1);
+    const slot = (W - padX * 2) / yoy.length, bw = Math.min(44, slot * 0.66);
+    const bars = yoy.map((y, i) => {
+      const x = padX + i * slot + (slot - bw) / 2, cx = (x + bw / 2).toFixed(1);
+      const h = (y.avg / max) * (H - padT - padB), top = H - padB - h;
+      const g = y.yoy;
+      const tip = `${y.year}: ${fmtYen(y.avg)}${g == null ? '' : ' / ' + fmtSignedPct(g)}${y.partial ? ' ' + t('detail.partialYear', y.n) : ''}`;
+      return `<g><title>${escapeHtml(tip)}</title>
+        <rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="var(--seasonal)" opacity="${y.partial ? 0.35 : 0.9}"></rect>
+        ${g == null ? '' : `<text x="${cx}" y="${(top - 6).toFixed(1)}" font-size="11" font-weight="700" text-anchor="middle" fill="${g >= 0 ? 'var(--seasonal)' : 'var(--danger)'}">${fmtSignedPct(g, 0)}</text>`}
+        <text x="${cx}" y="${H - padB + 16}" font-size="11" text-anchor="middle" fill="var(--ink-soft)">${y.year}</text></g>`;
+    }).join('');
+    box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="trend-svg">${bars}</svg><p class="muted-small viz-caption">${escapeHtml(t('vdet.yoyCaption'))}</p>`;
+  }
+
+  // ---- detail: where the spikes and dips sit on the sales line ----
+  function renderSpikeTimeline(rows, a) {
+    const box = document.getElementById('viz-spikes');
+    if (!isVisual() || rows.length < 2) { box.innerHTML = ''; return; }
+    const W = 1000, H = 200, padT = 22, padB = 26, padX = 12;
+    const n = rows.length;
+    const max = Math.max(...rows.map((r) => r.sales), 1), min = Math.min(0, ...rows.map((r) => r.sales));
+    const X = (i) => padX + (i / (n - 1)) * (W - padX * 2);
+    const Y = (v) => padT + (1 - (v - min) / (max - min || 1)) * (H - padT - padB);
+    const idx = new Map(rows.map((r, i) => [r.ymKey, i]));
+    const line = rows.map((r, i) => `${X(i).toFixed(1)},${Y(r.sales).toFixed(1)}`).join(' ');
+    const marks = (list, up) => list.map((r, k) => {
+      const i = idx.get(r.ymKey);
+      if (i == null) return '';
+      const x = X(i).toFixed(1), y = Y(rows[i].sales);
+      const tip = `${r.ymKey}  ${fmtYen(rows[i].sales)}  ${t('vdet.vsExpected', fmtPct(r.ratio, 0))}`;
+      return up
+        ? `<g class="tl-mark" data-ym="${r.ymKey}"><title>${escapeHtml(tip)}</title><circle cx="${x}" cy="${y.toFixed(1)}" r="8.5" fill="var(--campaign)" stroke="#fff" stroke-width="1.5"></circle><text x="${x}" y="${(y + 3.6).toFixed(1)}" font-size="10" font-weight="700" fill="#fff" text-anchor="middle">${k + 1}</text></g>`
+        : `<g class="tl-mark" data-ym="${r.ymKey}"><title>${escapeHtml(tip)}</title><path d="M${(+x - 6).toFixed(1)},${(y + 5).toFixed(1)} L${(+x + 6).toFixed(1)},${(y + 5).toFixed(1)} L${x},${(y + 15).toFixed(1)} Z" fill="var(--danger)"></path></g>`;
+    }).join('');
+    const years = rows.map((r, i) => ((r.month === 1 || i === 0)
+      ? `<text x="${X(i).toFixed(1)}" y="${H - 7}" font-size="11" fill="var(--ink-soft)" text-anchor="middle">${r.year}</text>` : '')).join('');
+    box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="trend-svg" preserveAspectRatio="xMidYMid meet">
+        <polyline points="${line}" fill="none" stroke="var(--ink-soft)" stroke-width="1.5"></polyline>${years}${marks(a.dips, false)}${marks(a.spikes, true)}</svg>
+      <p class="muted-small viz-caption">${escapeHtml(t('vdet.timelineCaption'))}</p>`;
+    box.querySelectorAll('.tl-mark').forEach((g) => g.addEventListener('click', () => {
+      const li = document.querySelector(`.spike-item[data-ym="${g.dataset.ym}"]`);
+      if (!li) return;
+      li.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      li.classList.add('is-flash');
+      setTimeout(() => li.classList.remove('is-flash'), 1400);
+    }));
+  }
+
+  // Bullet bars: this 月度's buyers per type, with a tick at the usual month.
+  function buyerDriverViz(d) {
+    const el = document.createElement('div');
+    el.className = 'drv';
+    const max = Math.max(1, ...d.b.slice(0, 4), ...d.base);
+    el.innerHTML = BUYER_KEYS.map((k, i) => `
+      <div class="drv-row" title="${escapeHtml(t('buyers.vsUsual', t('buyers.' + k), d.b[i], Math.round(d.base[i])))}">
+        <span class="drv-k">${escapeHtml(t('buyers.' + k))}</span>
+        <span class="drv-track"><i class="drv-now" style="width:${(d.b[i] / max * 100).toFixed(1)}%;background:var(--b-${k})"></i><i class="drv-usual" style="left:${(d.base[i] / max * 100).toFixed(1)}%"></i></span>
+        <span class="drv-v">${fmtInt(d.b[i])}<small> / ${fmtInt(d.base[i])}</small></span>
+      </div>`).join('')
+      + `<p class="drv-pattern">→ ${escapeHtml(t('buyers.pattern.' + d.key))}</p>`
+      + (d.newRate != null ? `<p class="muted-small">${escapeHtml(t('buyers.spikeRepeat', fmtPct(d.newRate, 0), d.baseRate != null ? fmtPct(d.baseRate, 0) : '—'))}</p>` : '');
+    return el;
+  }
+
+  function skuShareViz(drivers) {
+    const el = document.createElement('div');
+    el.className = 'drv drv-skus';
+    el.innerHTML = `<p class="muted-small">${escapeHtml(t('detail.spikeSkus'))}</p>` + drivers.map((d) => `
+      <div class="drv-row"><span class="drv-k" title="${escapeHtml(d.name)}">${escapeHtml(d.name)}</span>
+        <span class="drv-track"><i class="drv-now" style="width:${((d.share || 0) * 100).toFixed(1)}%;background:var(--ink-soft)"></i></span>
+        <span class="drv-v">${d.share != null ? fmtPct(d.share, 0) : '—'}</span></div>`).join('');
+    return el;
+  }
+
+  // ---- detail: buyer mix and repurchase ----
+  function renderBuyerViz(rows) {
+    const box = document.getElementById('buyer-viz');
+    if (!isVisual()) { box.innerHTML = ''; return; }
+    const s = buyerStats(rows);
+    const order = [2, 3, 1, 0];   // 継続, 復帰, 商品初回, 店舗新規 — same stack as the chart
+    const scale = Math.max(s.n, s.pn, 1);
+    const mix = (label, v, total) => `
+      <div class="mix-row"><span class="mix-label">${escapeHtml(label)}</span>
+        <span class="mix-track"><span class="mix-bar" style="width:${(total / scale * 100).toFixed(1)}%">${order.map((k) => {
+          const w = total ? v[k] / total * 100 : 0;
+          return w ? `<i style="width:${w.toFixed(2)}%;background:var(--b-${BUYER_KEYS[k]})" title="${escapeHtml(t('buyers.' + BUYER_KEYS[k]) + ' ' + fmtInt(v[k]))}">${w >= 9 ? fmtInt(v[k]) : ''}</i>` : '';
+        }).join('')}</span></span></div>`;
+    let html = `<div class="bviz-block"><h4>${escapeHtml(t('vdet.mixHeading'))}</h4>
+      ${mix(t('vdet.mixCur', fmtInt(s.n)), s.cur, s.n)}${s.pn ? mix(t('vdet.mixPrev', fmtInt(s.pn)), s.prev, s.pn) : ''}</div>`;
+    if (s.rc && s.rc.all != null) {
+      const dumb = (label, cur, prev) => {
+        if (cur == null) return '';
+        const up = prev == null || cur >= prev;
+        const lo = prev == null ? cur : Math.min(cur, prev), hi = prev == null ? cur : Math.max(cur, prev);
+        return `<div class="dumb-row"><span class="mix-label">${escapeHtml(label)}</span>
+          <span class="dumb-track">
+            <i class="dumb-line ${up ? 'is-up' : 'is-down'}" style="left:${(lo * 100).toFixed(1)}%;width:${((hi - lo) * 100).toFixed(1)}%"></i>
+            ${prev == null ? '' : `<i class="dumb-prev" style="left:${(prev * 100).toFixed(1)}%"></i>`}
+            <i class="dumb-cur ${up ? 'is-up' : 'is-down'}" style="left:${(cur * 100).toFixed(1)}%"></i>
+          </span>
+          <span class="dumb-val">${prev == null ? '' : fmtPct(prev, 0) + ' → '}<b>${fmtPct(cur, 0)}</b></span></div>`;
+      };
+      html += `<div class="bviz-block"><h4>${escapeHtml(t('vdet.repHeading', s.rc.from, s.rc.to))}</h4>
+        ${dumb(t('vdet.repAll'), s.rc.all, s.rp.all)}${dumb(t('vdet.repNew'), s.rc.newc, s.rp.newc)}
+        <p class="muted-small">${escapeHtml(t('vdet.repLegend'))}</p></div>`;
+    }
+    const flags = s.warns.map((w) => `<span class="viz-flag is-warn">⚠ ${escapeHtml(t('buyers.' + w))}</span>`);
+    if (s.inflow) flags.push(`<span class="viz-flag">↑ ${escapeHtml(t('buyers.noteInflow', s.inflow.toFixed(1)))}</span>`);
+    box.innerHTML = `<div class="bviz">${html}</div>${flags.length ? `<div class="viz-flags">${flags.join('')}</div>` : ''}`;
+  }
+
+  // ---- detail: year × 月度 heatmap in place of the monthly table ----
+  function renderRawViz(rows, a) {
+    const box = document.getElementById('viz-raw');
+    if (!isVisual()) { box.innerHTML = ''; return; }
+    const zBy = new Map(a.rowsWithRatio.map((r) => [r.ymKey, r]));
+    const spikes = new Set(a.spikes.map((r) => r.ymKey));
+    const dips = new Set(a.dips.map((r) => r.ymKey));
+    const by = new Map(rows.map((r) => [r.ymKey, r]));
+    const max = Math.max(...rows.map((r) => r.sales), 1);
+    const years = [...new Set(rows.map((r) => r.year))].sort((x, y) => y - x);
+    const totals = years.map((y) => rows.reduce((s, r) => (r.year === y ? s + r.sales : s), 0));
+    const maxT = Math.max(...totals, 1);
+    const head = `<div class="hm-row hm-head"><span></span>${Array.from({ length: 12 }, (_, i) => `<b>${i + 1}</b>`).join('')}<b>${escapeHtml(t('vdet.yearTotal'))}</b></div>`;
+    const body = years.map((y, yi) => `<div class="hm-row"><span class="hm-year">${y}</span>${Array.from({ length: 12 }, (_, i) => {
+      const key = `${y}-${String(i + 1).padStart(2, '0')}`;
+      const r = by.get(key);
+      if (!r) return '<i class="hm-cell is-none"></i>';
+      const z = zBy.get(key);
+      const cls = spikes.has(key) ? ' is-spike' : (dips.has(key) ? ' is-dip' : '');
+      const tip = [key, fmtYen(r.sales), `${t('detail.thRawQty')} ${fmtInt(r.qty)}`,
+        r.totalCustomers != null ? `${t('detail.thRawTotalCust')} ${fmtInt(r.totalCustomers)}` : null,
+        z && z.ratio != null ? t('vdet.vsExpected', fmtPct(z.ratio, 0)) : null].filter(Boolean).join('  ');
+      return `<i class="hm-cell${cls}" style="background:${mixHex('#FFFFFF', '#2F6F5E', Math.sqrt(Math.max(0, r.sales) / max))}" title="${escapeHtml(tip)}"></i>`;
+    }).join('')}<span class="hm-total"><i style="width:${(totals[yi] / maxT * 100).toFixed(1)}%"></i><em>${fmtCompactYen(totals[yi])}</em></span></div>`).join('');
+    box.innerHTML = `<div class="hm">${head}${body}</div><p class="muted-small viz-caption">${escapeHtml(t('vdet.rawCaption'))}</p>`;
+  }
+
 
   function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

@@ -33,6 +33,13 @@ seconds and merge by month like any upload, keeping your notes.
   newcomers who stop coming back. Each top spike shows which buyer type grew against the
   12 月度 before it and names the pattern: members reached (magazine / DM type), new shop
   customers (acquisition), usual buyers buying more, or more spend per buyer.
+- **数値 / ビジュアル** (top bar, remembered per browser): visual mode swaps tables and number
+  lists for charts on the same figures. 商品一覧 becomes a product map (last-12-月度 sales ×
+  change vs. a year earlier) and a card per series (sparkline + seasonal strip). 季節カレンダー
+  becomes a month picker with the strongest and weakest seasonal products for that 月度, and a
+  season map grouped by peak 月度. On the detail page the verdict becomes meters, the year
+  table a bar chart, spikes a numbered timeline with buyer bullet bars, the buyer summary a mix
+  bar and repurchase dumbbells, and the monthly table a year × 月度 heatmap.
 - **月度**: all months are fiscal months (21st of the previous month to the 20th).
 
 ## What it does
