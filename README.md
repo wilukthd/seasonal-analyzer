@@ -133,6 +133,10 @@ the only signal — every colored cell also carries a ▲ (above average) or ▼
 average) symbol, so the calendar still reads correctly under red-green color
 blindness, not just for typical color vision.
 
+Cell text is white or dark, whichever contrasts more with the cell (WCAG luminance). On the
+236-series calendar the worst cell is 4.0:1 and 97% are 4.5:1 or better; the rest are the
+mid-tones where neither white nor dark text can reach 4.5:1.
+
 ## If something looks broken (blank table, buttons doing nothing)
 
 The app now shows a red banner at the top of the page if any JavaScript error occurs,
@@ -177,14 +181,19 @@ parsing and analysis logic doesn't depend on where the data is stored.
 ```
 sales-analyzer/
 ├── index.html
+├── tests.html     # scenario tests for stats.js — open it after changing the model
 ├── css/style.css
 └── js/
     ├── i18n.js    # ja/en translation dictionary + language switching
     ├── db.js      # IndexedDB wrapper
-    ├── parse.js   # xlsx → structured rows (SheetJS)
+    ├── parse.js   # xlsx → structured rows (SheetJS 0.20.3 from cdn.sheetjs.com; 0.18.5 on cdnjs has CVEs)
     ├── stats.js   # seasonality model, permutation test, shrinkage, spikes (language-agnostic)
+    ├── tests.js   # the scenarios behind tests.html
     └── app.js     # view routing + rendering
 ```
+
+A file dropped anywhere on the page (not only on the drop zone) is imported; before, the
+browser opened it and left the app.
 
 ## Notes on the analysis method
 
@@ -197,7 +206,30 @@ Settings live in `SalesStats.CONFIG` (`js/stats.js`).
   the month pattern. Months with sales ≤ 0 are left out (counted on the detail page).
 - **Test.** F for the 月度 effect after year effects; p from a within-year permutation test
   (月度 labels shuffled inside each year, 199 times, seeded per series so it is stable).
-  Seasonal if p < 0.05. Strength = **ω²**, a bias-corrected η² (0 for pure noise).
+  Seasonal if p < 0.05 **and** the best and worst 月度 are at least 15 points apart.
+  Strength = **ω²**, a bias-corrected η² (0 for pure noise).
+- **Three guards (adopted 2026-11-14, after an audit; each has a scenario in `tests.html`).**
+  Applied to series with enough data for a verdict; short series keep the plain fit.
+  - *Growth inside a year.* Within one year a steady rise looks like "12月度 strong, 1月度
+    weak". Each year's monthly drift is estimated from the year effects around it (clipped to
+    ÷3…×3 a year) and taken out before the fit. Before: 3% a month growth was labelled
+    seasonal every time; after: about 4%, the same as noise.
+  - *One-off campaigns.* Months far above the fit (robust z > 3.5, at most two a year, only
+    in years with 6+ selling months) are left out of the fit and the test, so one big month
+    can't set that 月度's index. They keep a residual and stay in the spike list, tagged
+    「季節指数から除外」. Before: one 10× June made June 146% and listed every ordinary June
+    as a 下位月; after: June 100%, no June dips.
+  - *Size.* The 15-point rule above. A long, quiet series can have a tiny but "significant"
+    pattern; and steady daily demand alone makes 3月度 (21 Feb–20 Mar, 28–29 days) about 8%
+    low. Neither is called seasonal now.
+  - Effect on the 236 in-scope series (2026-11-14): 22 verdicts changed. 季節性あり（＋スパイク）
+    83 → 90 (4 lost: fast-declining products whose decline looked like a pattern; 11 gained,
+    mostly declining products whose decline hid a real one). 69 series have campaign months
+    left out. The detail page shows the pattern size, campaign months left out and the growth
+    removed in データの信頼性.
+- **Not yet decided (audit 3.4 / 3.5).** Products that sell only in some 月度 (福袋, calendars,
+  heaters…) are still データ不足, and their empty 月度 show the shop pattern. And 236 series
+  at α = 0.05 with p resolution 0.005 lets a few borderline labels through.
 - **データ不足.** No verdict, ω² or p unless ≥ 24 months with sales and every 月度 seen at
   least twice. Those series are tagged データ不足 / 参考 everywhere.
 - **Short series borrow strength.** Each 月度 effect is shrunk toward the shop-wide pattern

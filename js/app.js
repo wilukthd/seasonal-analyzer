@@ -84,6 +84,17 @@ function showFatalError(detail) {
     const files = Array.from(e.dataTransfer.files || []).filter((f) => /\.(xlsx|json)$/i.test(f.name));
     handleFiles(files);
   });
+  // A file dropped anywhere else would make the browser open it and leave the app: treat it as an
+  // upload instead (switching to the upload tab so the log is visible).
+  window.addEventListener('dragover', (e) => { if (!dropzone.contains(e.target)) e.preventDefault(); });
+  window.addEventListener('drop', (e) => {
+    if (dropzone.contains(e.target)) return;
+    e.preventDefault();
+    const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []).filter((f) => /\.(xlsx|json)$/i.test(f.name));
+    if (!files.length) return;
+    showView('upload');
+    handleFiles(files);
+  });
   fileInput.addEventListener('change', (e) => {
     handleFiles(Array.from(e.target.files || []));
     fileInput.value = '';
@@ -772,6 +783,9 @@ function showFatalError(detail) {
       [t('rel.minPerMonth'), t('rel.minPerMonthVal', s.minPerMonth, C.minPerMonth)],
       [t('rel.weight'), fmtPct(a.weight, 0)],
       [t('rel.spikes'), t('rel.spikesVal', a.spikeCount)],
+      [t('rel.amplitude'), a.amplitude == null || !s.ok ? '—' : t('rel.amplitudeVal', Math.round(a.amplitude * 100), Math.round(C.minAmplitude * 100))],
+      [t('rel.campaigns'), t('rel.campaignsVal', a.campaignCount)],
+      [t('rel.growth'), a.growth == null ? '—' : fmtSignedPct(a.growth, 0)],
     ];
     const reason = reliabilityReason(a);
     const box = document.getElementById('detail-reliability');
@@ -788,8 +802,10 @@ function showFatalError(detail) {
     let reason;
     if (!s.ok) reason = t('rel.reasonInsufficient', C.minMonths, C.minPerMonth);
     else if (a.test.p == null) reason = t('rel.reasonNoTest');
-    else if (a.test.p < C.alpha) reason = t('rel.reasonSeasonal', fmtP(a.test.p), fmtOmega(a));
+    else if (a.test.p < C.alpha && a.bigEnough) reason = t('rel.reasonSeasonal', fmtP(a.test.p), fmtOmega(a));
+    else if (a.test.p < C.alpha) reason = t('rel.reasonSmall', fmtP(a.test.p), Math.round(a.amplitude * 100), Math.round(C.minAmplitude * 100));
     else reason = t('rel.reasonNotSeasonal', fmtP(a.test.p));
+    if (a.campaignCount && s.ok) reason += ' ' + t('rel.reasonCampaigns', a.campaignCount);
     if (a.spiky && s.ok) reason += ' ' + t('rel.reasonSpiky', a.spikeCount, s.years);
     return reason;
   }
@@ -998,6 +1014,7 @@ function showFatalError(detail) {
         <div>
           <div class="ym">${vis ? (withFactor ? `<span class="spike-no">${i + 1}</span>` : '<span class="dip-no">▼</span>') : ''}${r.ymKey}</div>
           ${withFactor && !driver ? `<div class="factor">${escapeHtml(factorLabel(r.factorKey))}</div>` : ''}
+          ${r.campaign ? `<div class="factor campaign-tag" title="${escapeHtml(t('detail.campaignTitle'))}">${escapeHtml(t('detail.campaignTag'))}</div>` : ''}
         </div>
         <div class="ratio ${r.ratio >= 1 ? 'up' : 'down'}">${fmtPct(r.ratio, 0)}</div>
       `;
@@ -1387,10 +1404,18 @@ function showFatalError(detail) {
     return k < 0 ? mixHex('#FFFFFF', HEAT_LOW, -k) : mixHex('#FFFFFF', HEAT_HIGH, k);
   }
 
+  // Text colour by contrast: whichever of white and ink stands out more against the cell
+  // (WCAG relative luminance), instead of a fixed switch-over that left white text at ~2.3:1.
+  function luminance(rgb) {
+    const f = rgb.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+    return 0.2126 * f[0] + 0.7152 * f[1] + 0.0722 * f[2];
+  }
+  const INK_LUM = luminance(hexToRgb('#16232B'));
   function pctColor(index) {
     const bg = heatBg(index);
     if (!bg) return index == null ? '' : 'style="color:var(--ink);"';
-    const textColor = Math.abs((index - 1) / 0.5) > 0.55 ? '#FFFFFF' : 'var(--ink)';
+    const L = luminance(bg.match(/\d+/g).map(Number));
+    const textColor = (1.05 / (L + 0.05)) > ((L + 0.05) / (INK_LUM + 0.05)) ? '#FFFFFF' : 'var(--ink)';
     return `style="background:${bg}; color:${textColor}; font-weight:700;"`;
   }
 
@@ -1806,6 +1831,13 @@ function showFatalError(detail) {
     html += meter(t('rel.months'), t('vdet.monthsVal', s.months),
       `<i class="meter-fill is-grey" style="width:${(s.months / scaleMax * 100).toFixed(1)}%"></i><em class="meter-cut" style="left:${(C.minMonths / scaleMax * 100).toFixed(1)}%" title="${C.minMonths}"></em>`,
       '0', t('vdet.monthsNeed', C.minMonths));
+    if (a.amplitude != null && s.ok) {
+      // best − worst 月度, on a 0–100 pt scale (anything bigger is drawn full)
+      const ampPct = Math.min(100, a.amplitude * 100);
+      html += meter(t('rel.amplitude'), t('vdet.amplitudeVal', Math.round(a.amplitude * 100)),
+        `<i class="meter-fill${a.bigEnough ? '' : ' is-grey'}" style="width:${ampPct.toFixed(1)}%"></i><em class="meter-cut" style="left:${(C.minAmplitude * 100).toFixed(1)}%"></em>`,
+        t('vdet.amplitudeLow', Math.round(C.minAmplitude * 100)), t('vdet.amplitudeHigh'));
+    }
     html += meter(t('rel.weight'), fmtPct(a.weight, 0),
       `<i class="meter-fill is-grey" style="width:${(a.weight * 100).toFixed(1)}%"></i>`, t('vdet.weightLow'), t('vdet.weightHigh'));
     const maxN = Math.max(...a.seasonal.map((x) => x.n), C.minPerMonth + 1);

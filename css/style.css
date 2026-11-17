@@ -1223,3 +1223,6 @@ body.is-visual .spike-item { border: 1px solid var(--line-soft); border-radius: 
 #channel-summary .table-wrap { margin-bottom: 10px; }
 #chtab-up .dv-row, #chtab-down .dv-row { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 84px 62px; }
 #chtab-up .dv-val, #chtab-down .dv-val { white-space: nowrap; }
+
+/* spike left out of the seasonal index (one-off campaign) */
+.spike-item .campaign-tag { color: var(--campaign); font-weight: 700; }

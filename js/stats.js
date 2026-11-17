@@ -10,6 +10,16 @@
 // Data sufficiency: no verdict unless ≥ 24 months with sales and every 月度 seen ≥ 2 times.
 // Spikes: robust z (median / MAD) of model residuals — unusual for that year and 月度.
 //
+// Three guards from the 2026-11-14 audit (each one tested in tests.html):
+//   Growth inside a year — a 1月度→12月度 slope is indistinguishable from a 月度 pattern within one
+//     year, so each year's monthly drift is estimated from the year effects around it and taken
+//     out before the fit (detrend).
+//   One-off campaigns — cells far above the fit (robust z > spikeZ, at most two a year) are left out
+//     of the fit and the test, so one big month cannot set that 月度's index; they still get a
+//     residual and still show as spikes (flagCampaigns).
+//   Size — "seasonal" needs p < alpha AND best and worst 月度 at least minAmplitude apart, so a long,
+//     quiet series with a tiny pattern (or 3月度 being a 28-day 月度) is not called seasonal.
+//
 // Language-agnostic: returns keys; labels live in i18n.js.
 
 const SalesStats = (() => {
@@ -22,6 +32,10 @@ const SalesStats = (() => {
     spikesPerYear: 0.5,     // at or above = "spiky"
     band: 1.645,            // 90% band
     defaultTau2: 0.17,      // between-series variance of log 月度 effects if it can't be estimated
+    minAmplitude: 0.15,     // best − worst 月度 index needed to call a pattern seasonal
+    maxGrowth: 3,           // detrend: yearly growth clipped to ÷3 … ×3
+    campaignsPerYear: 2,    // at most this many campaign cells left out per year
+    campaignYearMonths: 6,  // ... and only in years with at least this many selling months
   };
   const MONTH_LABELS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
 
@@ -89,6 +103,51 @@ const SalesStats = (() => {
     return { fit, F: ((ssrRed - fit.ssr) / df1) / (fit.ssr / df2), df1, df2 };
   }
 
+  // Monthly drift of each year from the year effects of its neighbours, taken out of v as a slope
+  // centred on mid-year. The slope leaves a full year's level unchanged, so each pass replaces the
+  // estimate (it would double if added); the second pass only refines partial first / last years.
+  // Returns the detrended values and g[year] (log change per month).
+  function detrend(y, m, v, years, iters = 2) {
+    const nYears = years.length;
+    const g = new Float64Array(nYears);
+    const w = Float64Array.from(v);
+    if (nYears < 2) return { v: w, g };
+    const cap = Math.log(CONFIG.maxGrowth) / 12;
+    for (let it = 0; it < iters; it++) {
+      const ye = fitTwoWay(y, m, w, nYears).ye;
+      for (let k = 0; k < nYears; k++) {
+        const lo = Math.max(0, k - 1), hi = Math.min(nYears - 1, k + 1);
+        const d = (ye[hi] - ye[lo]) / (12 * (years[hi] - years[lo]));
+        g[k] = Number.isFinite(d) ? Math.max(-cap, Math.min(cap, d)) : 0;
+      }
+      for (let i = 0; i < v.length; i++) w[i] = v[i] - g[y[i]] * (m[i] - 5.5);
+    }
+    return { v: w, g };
+  }
+
+  // Indexes of one-off campaign cells: far above the fit, at most campaignsPerYear a year, only in
+  // years with campaignYearMonths+ selling months, and never leaving a 月度 with < minPerMonth.
+  function flagCampaigns(y, m, v, nYears) {
+    const fit = fitTwoWay(y, m, v, nYears);
+    const res = Array.from(fit.res);
+    const med = median(res);
+    const mad = median(res.map((r) => Math.abs(r - med))) * 1.4826 || 1e-9;
+    const perYear = new Array(nYears).fill(0), yearN = new Array(nYears).fill(0), monthN = new Array(12).fill(0);
+    for (let i = 0; i < v.length; i++) { yearN[y[i]]++; monthN[m[i]]++; }
+    const out = new Set();
+    res.map((r, i) => [(r - med) / mad, i])
+      .filter(([z]) => z > CONFIG.spikeZ)
+      .sort((a, b) => b[0] - a[0])
+      .forEach(([, i]) => {
+        if (yearN[y[i]] < CONFIG.campaignYearMonths || perYear[y[i]] >= CONFIG.campaignsPerYear
+          || monthN[m[i]] - 1 < CONFIG.minPerMonth) return;
+        out.add(i);
+        perYear[y[i]]++;
+        monthN[m[i]]--;
+      });
+    return out;
+  }
+
   function buildObs(rows) {
     const pos = rows.filter((r) => r.sales > 0);
     const years = Array.from(new Set(pos.map((r) => r.year))).sort((a, b) => a - b);
@@ -114,14 +173,14 @@ const SalesStats = (() => {
     let mu = new Float64Array(12);
     if (shopRows.length >= 24) {
       const o = buildObs(shopRows);
-      mu = fitTwoWay(o.y, o.m, o.v, o.years.length).me;
+      mu = fitTwoWay(o.y, o.m, detrend(o.y, o.m, o.v, o.years).v, o.years.length).me;
     }
     // τ² from long series: spread of their 月度 effects around the shop pattern, minus noise.
     const devs = [];
     records.forEach((rec) => {
       const o = buildObs(rec.rows);
       if (o.v.length < 60) return;
-      const fit = fitTwoWay(o.y, o.m, o.v, o.years.length);
+      const fit = fitTwoWay(o.y, o.m, detrend(o.y, o.m, o.v, o.years).v, o.years.length);
       const df2 = o.v.length - (fit.present - 1) - o.years.length;
       if (df2 <= 0) return;
       const mse = fit.ssr / df2;
@@ -193,9 +252,25 @@ const SalesStats = (() => {
 
     let test = { F: null, p: null, omega2: null, df1: 0, df2: 0 };
     let fit = null, mse = null;
+    let resAll = null;               // residual of every month with sales, campaign cells included
+    let campaigns = new Set();       // indexes into o.rows left out of the fit
+    let growth = null;               // within-year growth taken out in the latest year (per year)
     if (n >= 14) {
-      const ssrRed = ssrYearOnly(o.y, o.v, nYears);
-      const base = fStat(o.y, o.m, o.v, nYears, ssrRed);
+      // Take growth out, find the campaign cells, then re-estimate the growth without them. Only for
+      // series with enough data for a verdict: on a few scattered months the drift and the 月度
+      // effects can't be told apart and the index runs to 1,000%+, so those keep the plain fit.
+      const guarded = sufficiency.ok;
+      if (guarded) campaigns = flagCampaigns(o.y, o.m, detrend(o.y, o.m, o.v, o.years).v, nYears);
+      const keep = [];
+      for (let i = 0; i < n; i++) if (!campaigns.has(i)) keep.push(i);
+      const ky = Int32Array.from(keep, (i) => o.y[i]);
+      const km = Int32Array.from(keep, (i) => o.m[i]);
+      const kv0 = Float64Array.from(keep, (i) => o.v[i]);
+      const dt = guarded ? detrend(ky, km, kv0, o.years) : { v: kv0, g: new Float64Array(nYears) };
+      const kv = dt.v;
+      const kn = keep.length;
+      const ssrRed = ssrYearOnly(ky, kv, nYears);
+      const base = fStat(ky, km, kv, nYears, ssrRed);
       if (base.F != null) {
         fit = base.fit;
         mse = fit.ssr / base.df2;
@@ -207,8 +282,8 @@ const SalesStats = (() => {
         // within-year permutation of 月度 labels
         const rand = seededRandom(seedKey + '|' + n);
         const groups = Array.from({ length: nYears }, () => []);
-        for (let i = 0; i < n; i++) groups[o.y[i]].push(i);
-        const mp = Int32Array.from(o.m);
+        for (let i = 0; i < kn; i++) groups[ky[i]].push(i);
+        const mp = Int32Array.from(km);
         let hits = 0;
         for (let b = 0; b < CONFIG.permutations; b++) {
           groups.forEach((idx) => {
@@ -218,10 +293,12 @@ const SalesStats = (() => {
               const t = mp[a]; mp[a] = mp[c]; mp[c] = t;
             }
           });
-          const st = fStat(o.y, mp, o.v, nYears, ssrRed);
+          const st = fStat(ky, mp, kv, nYears, ssrRed);
           if (st.F != null && st.F >= base.F) hits++;
         }
         test.p = (hits + 1) / (CONFIG.permutations + 1);
+        resAll = Array.from(o.v, (v, i) => v - dt.g[o.y[i]] * (o.m[i] - 5.5) - fit.ye[o.y[i]] - fit.me[o.m[i]]);
+        growth = guarded ? Math.exp(12 * dt.g[nYears - 1]) - 1 : null;
       }
     }
 
@@ -244,15 +321,20 @@ const SalesStats = (() => {
     });
     const withW = seasonal.filter((s) => s.n > 0);
     const weight = fit && withW.length ? mean(withW.map((s) => s.weight)) : 0;
+    // size of the own-data pattern: best minus worst 月度 index
+    const raws = seasonal.filter((s) => s.raw != null).map((s) => s.raw);
+    const amplitude = raws.length ? Math.max(...raws) - Math.min(...raws) : null;
 
-    // residuals → ratio to the model's expectation, robust z, spikes
+    // residuals → ratio to the model's expectation, robust z, spikes. The scale (MAD) comes from
+    // the months in the fit, so campaign cells keep their large z.
     let rowsWithRatio = rows.map((r) => ({ ...r, ratio: null, z: null }));
     let spikeCount = 0;
     if (fit) {
       const med = median(Array.from(fit.res));
       const mad = median(Array.from(fit.res, (r) => Math.abs(r - med))) * 1.4826 || 1e-9;
       const byKey = new Map();
-      o.rows.forEach((r, i) => byKey.set(r.ymKey, { ratio: Math.exp(fit.res[i]), z: (fit.res[i] - med) / mad }));
+      o.rows.forEach((r, i) => byKey.set(r.ymKey,
+        { ratio: Math.exp(resAll[i]), z: (resAll[i] - med) / mad, campaign: campaigns.has(i) }));
       rowsWithRatio = rows.map((r) => ({ ...r, ...(byKey.get(r.ymKey) || { ratio: null, z: null }) }));
       spikeCount = rowsWithRatio.filter((r) => r.z != null && r.z > CONFIG.spikeZ).length;
     }
@@ -262,13 +344,15 @@ const SalesStats = (() => {
       .map((r) => ({ ...r, factorKey: diagnoseFactor(r, rows) }));
     const dips = [...modeled].sort((a, b) => a.z - b.z).slice(0, 5);
 
+    const bigEnough = amplitude != null && amplitude >= CONFIG.minAmplitude;
     let key;
     if (!sufficiency.ok || test.p == null) key = 'insufficient';
-    else if (test.p < CONFIG.alpha) key = spiky ? 'seasonal-spiky' : 'seasonal';
+    else if (test.p < CONFIG.alpha && bigEnough) key = spiky ? 'seasonal-spiky' : 'seasonal';
     else key = spiky ? 'spiky' : 'stable';
 
     return {
       rowsWithRatio, seasonal, weight, sufficiency, test, spikeCount, spiky,
+      amplitude, bigEnough, campaignCount: campaigns.size, growth,
       yoy: yearOnYear(rows), classification: { key }, spikes, dips,
     };
   }

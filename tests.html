@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Seasonality tests | THD Sales Ledger</title>
+<style>
+  :root { --ink: #16232B; --soft: #4B5A62; --line: #D6DCD8; --ok: #2F6F5E; --ok-bg: #E3EEEA; --ng: #9B3B32; --ng-bg: #FBEDEB; }
+  body { margin: 0; padding: 24px 16px 48px; background: #EEF1EF; color: var(--ink); font-family: 'Noto Sans JP', sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  p { color: var(--soft); font-size: 13px; line-height: 1.6; margin: 0 0 12px; }
+  #summary { font-weight: 700; font-size: 14px; margin: 12px 0; }
+  #summary.pass { color: var(--ok); } #summary.fail { color: var(--ng); }
+  .wrap { overflow-x: auto; background: #fff; border: 1px solid var(--line); border-radius: 3px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--ink); color: #fff; font-weight: 700; }
+  td:first-child { font-weight: 700; white-space: nowrap; }
+  td:last-child { white-space: nowrap; color: var(--soft); }
+  tr.pass td:first-child { color: var(--ok); } tr.fail td:first-child { color: var(--ng); }
+  tr.fail { background: var(--ng-bg); }
+  .known { font-weight: 400; font-size: 11px; color: var(--soft); border: 1px solid var(--line); border-radius: 10px; padding: 0 6px; }
+  a { color: var(--ok); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Seasonality engine — scenario tests</h1>
+  <p>Runs <code>js/stats.js</code> on synthetic monthly series with a known answer (from the 2026-11-14 audit):
+     noise must stay unlabelled; growth, month length and one-off campaigns must not create a pattern; real
+     seasons must still be found. Each line with "200 runs" repeats the scenario with different seeded noise.
+     No data from the browser is used. <a href="index.html">← back to the app</a></p>
+  <div id="summary">running…</div>
+  <div class="wrap">
+    <table>
+      <thead><tr><th>Result</th><th>Scenario</th><th>Detail</th><th>Time</th></tr></thead>
+      <tbody id="results"></tbody>
+    </table>
+  </div>
+</main>
+<script src="js/stats.js?v=20261114a"></script>
+<script src="js/tests.js?v=20261114a"></script>
+</body>
+</html>

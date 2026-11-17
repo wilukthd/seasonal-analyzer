@@ -1,0 +1,4 @@
+# never commit sales data
+*.json
+*.xlsx
+*.csv
